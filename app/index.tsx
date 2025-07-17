@@ -15,7 +15,7 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <StatusBar style="dark" />
       <LinearGradient
-        colors={['#e8e2f0', '#d4c4e0', '#c0a6d0']}
+        colors={['#fafafa', '#f5f5f5', '#eeeeee']}
         style={styles.container}
       >
         <ScrollView
@@ -112,16 +112,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   strobeButton: {
-    backgroundColor: '#b8a8c8',
+    backgroundColor: '#4a4a4a',
     paddingVertical: 20,
     paddingHorizontal: 20,
     borderRadius: 50,
     borderWidth: 1,
-    borderColor: '#a098b8',
+    borderColor: '#3a3a3a',
     marginBottom: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
     flexDirection: 'row',

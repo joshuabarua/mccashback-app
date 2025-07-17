@@ -15,8 +15,7 @@ export default function CameraScreen() {
   const [isStrobing, setIsStrobing] = useState(false);
   const [rpm, setRpm] = useState(500);
   const [flashOn, setFlashOn] = useState(false);
-  const [zoom, setZoom] = useState(0);
-  const [activeSlider, setActiveSlider] = useState<'strobe' | 'zoom' | null>(null);
+  const [activeSlider, setActiveSlider] = useState<'strobe' | null>(null);
   const cameraRef = useRef<any>(null);
   const strobeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
@@ -84,9 +83,7 @@ export default function CameraScreen() {
     setActiveSlider(activeSlider === 'strobe' ? null : 'strobe');
   };
 
-  const handleZoomIconPress = () => {
-    setActiveSlider(activeSlider === 'zoom' ? null : 'zoom');
-  };
+
 
   if (!permission) {
     return (
@@ -117,7 +114,6 @@ export default function CameraScreen() {
         style={styles.camera}
         facing="back"
         enableTorch={flashOn}
-        zoom={zoom}
         ref={cameraRef}
       />
 
@@ -134,17 +130,19 @@ export default function CameraScreen() {
       >
         {/* Control Icons Row */}
         <View style={styles.iconRow}>
-          {/* Strobe Toggle Button */}
-          <TouchableOpacity
+          {/* Power Button for Strobe */}
+          <TouchableOpacity 
             style={[
-              styles.strobeButton,
-              { backgroundColor: isStrobing ? '#d4a5a5' : '#a5d4a5' }
-            ]}
+              styles.iconButton,
+              { backgroundColor: isStrobing ? '#ff6b6b' : 'rgba(255, 255, 255, 0.2)' }
+            ]} 
             onPress={toggleStrobe}
           >
-            <Text style={styles.strobeButtonText}>
-              {isStrobing ? 'Stop Strobe' : 'Start Strobe'}
-            </Text>
+            <Ionicons 
+              name="power" 
+              size={24} 
+              color={isStrobing ? "white" : "#cccccc"} 
+            />
           </TouchableOpacity>
 
           {/* Strobe RPM Icon */}
@@ -158,16 +156,7 @@ export default function CameraScreen() {
             <Ionicons name="flashlight" size={24} color="white" />
           </TouchableOpacity>
 
-          {/* Zoom/Aperture Icon */}
-          <TouchableOpacity
-            style={[
-              styles.iconButton,
-              { backgroundColor: activeSlider === 'zoom' ? '#a5d4a5' : 'rgba(255, 255, 255, 0.2)' }
-            ]}
-            onPress={handleZoomIconPress}
-          >
-            <Ionicons name="aperture" size={24} color="white" />
-          </TouchableOpacity>
+
         </View>
 
         {/* Contextual Sliders */}
@@ -187,21 +176,7 @@ export default function CameraScreen() {
           </View>
         )}
 
-        {activeSlider === 'zoom' && (
-          <View style={styles.sliderContainer}>
-            <Slider
-              style={styles.slider}
-              minimumValue={0}
-              maximumValue={1}
-              step={0.01}
-              value={zoom}
-              onValueChange={setZoom}
-              minimumTrackTintColor="#a5d4a5"
-              maximumTrackTintColor="#d4a5a5"
-              thumbTintColor="#ffffff"
-            />
-          </View>
-        )}
+
       </BlurView>
     </View>
   );
