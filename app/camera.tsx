@@ -15,6 +15,8 @@ export default function CameraScreen() {
   const [isStrobing, setIsStrobing] = useState(false);
   const [rpm, setRpm] = useState(500);
   const [flashOn, setFlashOn] = useState(false);
+  const [zoom, setZoom] = useState(0);
+  const [activeSlider, setActiveSlider] = useState<'strobe' | 'zoom' | null>(null);
   const cameraRef = useRef<any>(null);
   const strobeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
@@ -30,6 +32,19 @@ export default function CameraScreen() {
       }
     };
   }, []);
+
+  // Update strobe interval in real-time when RPM changes while strobing
+  useEffect(() => {
+    if (isStrobing && strobeIntervalRef.current) {
+      // Clear current interval
+      clearInterval(strobeIntervalRef.current);
+      
+      // Start new interval with updated RPM
+      strobeIntervalRef.current = setInterval(() => {
+        setFlashOn(prev => !prev);
+      }, calculateStrobeInterval(rpm));
+    }
+  }, [rpm, isStrobing]);
 
   const calculateStrobeInterval = (rpm: number): number => {
     // Convert RPM to milliseconds per flash
@@ -65,6 +80,14 @@ export default function CameraScreen() {
     }
   };
 
+  const handleStrobeIconPress = () => {
+    setActiveSlider(activeSlider === 'strobe' ? null : 'strobe');
+  };
+
+  const handleZoomIconPress = () => {
+    setActiveSlider(activeSlider === 'zoom' ? null : 'zoom');
+  };
+
   if (!permission) {
     return (
       <View style={styles.container}>
@@ -94,6 +117,7 @@ export default function CameraScreen() {
         style={styles.camera}
         facing="back"
         enableTorch={flashOn}
+        zoom={zoom}
         ref={cameraRef}
       />
 
@@ -108,32 +132,76 @@ export default function CameraScreen() {
         tint="dark"
         style={styles.controlsContainer}
       >
-        <TouchableOpacity
-          style={[
-            styles.strobeButton,
-            { backgroundColor: isStrobing ? '#d4a5a5' : '#a5d4a5' }
-          ]}
-          onPress={toggleStrobe}
-        >
-          <Text style={styles.strobeButtonText}>
-            {isStrobing ? 'Stop Strobe' : 'Start Strobe'}
-          </Text>
-        </TouchableOpacity>
+        {/* Control Icons Row */}
+        <View style={styles.iconRow}>
+          {/* Strobe Toggle Button */}
+          <TouchableOpacity
+            style={[
+              styles.strobeButton,
+              { backgroundColor: isStrobing ? '#d4a5a5' : '#a5d4a5' }
+            ]}
+            onPress={toggleStrobe}
+          >
+            <Text style={styles.strobeButtonText}>
+              {isStrobing ? 'Stop Strobe' : 'Start Strobe'}
+            </Text>
+          </TouchableOpacity>
 
-        <View style={styles.sliderContainer}>
-          <Text style={styles.sliderLabel}>Strobe RPM: {rpm}</Text>
-          <Slider
-            style={styles.slider}
-            minimumValue={500}
-            maximumValue={3000}
-            step={50}
-            value={rpm}
-            onValueChange={setRpm}
-            minimumTrackTintColor="#a5d4a5"
-            maximumTrackTintColor="#d4a5a5"
-            thumbTintColor="#ffffff"
-          />
+          {/* Strobe RPM Icon */}
+          <TouchableOpacity
+            style={[
+              styles.iconButton,
+              { backgroundColor: activeSlider === 'strobe' ? '#d4a5a5' : 'rgba(255, 255, 255, 0.2)' }
+            ]}
+            onPress={handleStrobeIconPress}
+          >
+            <Ionicons name="flashlight" size={24} color="white" />
+          </TouchableOpacity>
+
+          {/* Zoom/Aperture Icon */}
+          <TouchableOpacity
+            style={[
+              styles.iconButton,
+              { backgroundColor: activeSlider === 'zoom' ? '#a5d4a5' : 'rgba(255, 255, 255, 0.2)' }
+            ]}
+            onPress={handleZoomIconPress}
+          >
+            <Ionicons name="aperture" size={24} color="white" />
+          </TouchableOpacity>
         </View>
+
+        {/* Contextual Sliders */}
+        {activeSlider === 'strobe' && (
+          <View style={styles.sliderContainer}>
+            <Slider
+              style={styles.slider}
+              minimumValue={500}
+              maximumValue={3000}
+              step={50}
+              value={rpm}
+              onValueChange={setRpm}
+              minimumTrackTintColor="#a5d4a5"
+              maximumTrackTintColor="#d4a5a5"
+              thumbTintColor="#ffffff"
+            />
+          </View>
+        )}
+
+        {activeSlider === 'zoom' && (
+          <View style={styles.sliderContainer}>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={1}
+              step={0.01}
+              value={zoom}
+              onValueChange={setZoom}
+              minimumTrackTintColor="#a5d4a5"
+              maximumTrackTintColor="#d4a5a5"
+              thumbTintColor="#ffffff"
+            />
+          </View>
+        )}
       </BlurView>
     </View>
   );
@@ -195,17 +263,37 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
+  iconRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   strobeButton: {
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 25,
     alignItems: 'center',
-    marginBottom: 20,
+    flex: 1,
+    marginRight: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  iconButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   strobeButtonText: {
     color: '#ffffff',
