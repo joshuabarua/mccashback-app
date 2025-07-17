@@ -11,6 +11,11 @@ export default function HomeScreen() {
     router.push('/camera');
   };
 
+  const handleVisionCameraPress = () => {
+    // For now, show an alert since we need EAS build for vision camera
+    alert('Vision Camera requires EAS Build. Use "eas build" to test this feature.');
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
@@ -42,6 +47,14 @@ export default function HomeScreen() {
             >
               <Ionicons name="camera" size={36} color="white" />
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.strobeButton, { backgroundColor: '#6b6bff' }]}
+              onPress={handleVisionCameraPress}
+            >
+              <Ionicons name="eye" size={36} color="white" />
+            </TouchableOpacity>
+            <Text style={styles.buttonLabel}>Vision Camera (Manual Focus)</Text>
 
             <Text style={styles.footer}>
               Where automation meets artistry in perpetual motion
@@ -134,5 +147,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
     letterSpacing: 1,
+  },
+  buttonLabel: {
+    textAlign: 'center',
+    color: '#7a7a7a',
+    fontSize: 12,
+    marginTop: 10,
+    marginBottom: 20,
   },
 });
