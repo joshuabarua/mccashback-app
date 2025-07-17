@@ -1,12 +1,12 @@
-import { StyleSheet, TouchableOpacity, View, Text, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
   const router = useRouter();
-  
+
   const handleCameraPress = () => {
     router.push('/camera');
   };
@@ -18,32 +18,29 @@ export default function HomeScreen() {
         colors={['#e8e2f0', '#d4c4e0', '#c0a6d0']}
         style={styles.container}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
             <Text style={styles.artistName}>Angus Greenhalgh</Text>
             <Text style={styles.title}>Automation in D Minor</Text>
-            
+
             <View style={styles.descriptionContainer}>
               <Text style={styles.description}>
                 ✨ A generative sound sculpture that creates an infinite composition through the interplay of mechanical automation and digital processing. Each moment is unique, born from the tension between predictable patterns and chaotic emergence.
               </Text>
-            </View>
 
-            <View style={styles.techInfo}>
               <Text style={styles.techText}>
                 Over 10 billion possible combinations ensure that no two experiences are identical, making each encounter with the installation a singular moment in an endless musical journey.
               </Text>
             </View>
 
-            <TouchableOpacity 
-              style={styles.strobeButton} 
+            <TouchableOpacity
+              style={styles.strobeButton}
               onPress={handleCameraPress}
             >
-              <Ionicons name="camera" size={24} color="white" style={styles.buttonIcon} />
-              <Text style={styles.strobeButtonText}>Access Strobe Control</Text>
+              <Ionicons name="camera" size={36} color="white" />
             </TouchableOpacity>
 
             <Text style={styles.footer}>
@@ -116,12 +113,12 @@ const styles = StyleSheet.create({
   },
   strobeButton: {
     backgroundColor: '#b8a8c8',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 25,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderRadius: 50,
     borderWidth: 1,
     borderColor: '#a098b8',
-    marginBottom: 30,
+    marginBottom: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -131,18 +128,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonIcon: {
-    marginRight: 10,
-  },
-  strobeButtonText: {
-    color: '#4a4a4a',
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
   footer: {
     textAlign: 'center',
-    color: '#cccccc',
+    color: '#7a7a7a',
     fontSize: 14,
     fontStyle: 'italic',
     letterSpacing: 1,
