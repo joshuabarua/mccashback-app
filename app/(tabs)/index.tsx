@@ -1,75 +1,188 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import { StyleSheet, TouchableOpacity, View, Text, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function HomeScreen() {
+  const router = useRouter();
+  
+  const handleCameraPress = () => {
+    router.push('/camera');
+  };
+  
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={styles.container}>
+      <StatusBar style="light" />
+      <LinearGradient
+        colors={['#0a0a0a', '#1a1a1a', '#2a2a2a']}
+        style={styles.gradient}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.artistName}>Angus Greenhalgh</Text>
+            <Text style={styles.installationTitle}>Automation in D Minor</Text>
+          </View>
+
+          {/* Main Description */}
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.mainDescription}>
+              ✨ Automation in D Minor transforms 5 CD players into a generative sound sculpture, 
+              creating a constantly evolving, cinematic soundscape without human intervention. 
+              Each shuffle becomes part of a living composition, exploring how technology and 
+              chance shape music in the age of AI.
+            </Text>
+            
+            <Text style={styles.subDescription}>
+              Sound, light, and mechanics merge into an immersive, meditative experience—an 
+              orchestra that plays itself.
+            </Text>
+          </View>
+
+          {/* Technical Info */}
+          <View style={styles.technicalContainer}>
+            <Text style={styles.technicalTitle}>Infinite Possibilities</Text>
+            <Text style={styles.technicalDescription}>
+              This installation contains over 10 billion possible combinations, shifting 
+              endlessly due to track variations and staggered starts. Even if it ran 
+              continuously, it would take tens of thousands of years before a repeat, and 
+              with phasing differences, it will realistically never repeat in your lifetime.
+            </Text>
+          </View>
+
+          {/* Camera Access Button */}
+          <TouchableOpacity style={styles.cameraButton} onPress={handleCameraPress}>
+            <View style={styles.buttonContent}>
+              <Ionicons name="camera" size={28} color="#ffffff" />
+              <Text style={styles.cameraButtonText}>Access Strobe Control</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>An exploration of generative music and automated artistry</Text>
+          </View>
+        </ScrollView>
+      </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
   },
-  stepContainer: {
-    gap: 8,
+  gradient: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 40,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  artistName: {
+    fontSize: 18,
+    fontWeight: '300',
+    color: '#cccccc',
+    letterSpacing: 2,
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  installationTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  descriptionContainer: {
+    marginBottom: 40,
+  },
+  mainDescription: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#e0e0e0',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontWeight: '400',
+  },
+  subDescription: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#b0b0b0',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    fontWeight: '300',
+  },
+  technicalContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  technicalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  technicalDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#d0d0d0',
+    textAlign: 'center',
+    fontWeight: '400',
+  },
+  cameraButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    marginBottom: 40,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  cameraButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#888888',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    letterSpacing: 1,
   },
 });
