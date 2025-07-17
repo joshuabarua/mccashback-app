@@ -93,7 +93,7 @@ export default function CameraScreen() {
       <CameraView
         style={styles.camera}
         facing="back"
-        flash={flashOn ? 'on' : 'off'}
+        enableTorch={flashOn}
         ref={cameraRef}
       />
 
