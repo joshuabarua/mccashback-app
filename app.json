@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.joshuabarua.mccashback",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to enable strobe and scanning features.",
-        "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording."
+        "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
