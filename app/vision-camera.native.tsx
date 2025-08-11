@@ -34,14 +34,11 @@ export default function VisionCameraScreen() {
   // Pick a camera format that supports the desired FPS
   const selectedFormat = useMemo(() => {
     if (!device) return undefined;
-    // Prefer formats that include the target fps within their supported range
     const formats: CameraDeviceFormat[] = device.formats ?? [];
-    // Try exact match first
     let best = formats.find((f: CameraDeviceFormat) =>
       (f.frameRateRanges as FrameRateRange[] | undefined)?.some((r: FrameRateRange) => fps >= r.minFrameRate && fps <= r.maxFrameRate)
     );
     if (best) return best;
-    // Fallback: pick closest by minimizing distance to the range
     let closest = undefined as CameraDeviceFormat | undefined;
     let closestDelta = Number.POSITIVE_INFINITY;
     for (const f of formats) {

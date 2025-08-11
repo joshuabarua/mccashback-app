@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.mccashback"
+      "bundleIdentifier": "com.joshuabarua.mccashback",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to enable strobe and scanning features.",
+        "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +22,10 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.mccashback"
+      "package": "com.anonymous.mccashback",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -27,6 +34,7 @@
     },
     "plugins": [
       "expo-router",
+      "react-native-vision-camera",
       [
         "expo-splash-screen",
         {
@@ -39,6 +47,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bd150615-2e58-46b2-9939-a4384389f7c3"
+      }
     }
   }
 }
