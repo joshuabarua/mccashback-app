@@ -7,10 +7,6 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 export default function HomeScreen() {
   const router = useRouter();
 
-  const handleCameraPress = () => {
-    router.push('/camera');
-  };
-
   const handleVisionCameraPress = () => {
     router.push('/vision-camera');
   };
@@ -39,13 +35,6 @@ export default function HomeScreen() {
                 Over 10 billion possible combinations ensure that no two experiences are identical, making each encounter with the installation a singular moment in an endless musical journey.
               </Text>
             </View>
-
-            <TouchableOpacity
-              style={styles.strobeButton}
-              onPress={handleCameraPress}
-            >
-              <Ionicons name="camera" size={36} color="white" />
-            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.strobeButton, { backgroundColor: '#6b6bff' }]}

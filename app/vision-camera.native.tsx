@@ -1,20 +1,20 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
-import type { Camera } from 'react-native-vision-camera';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import VisionCameraView from './camera/components/VisionCameraView';
-import ControlsOverlay from './camera/components/ControlsOverlay';
-import ToastOverlay from './camera/components/Toast';
-import FocusOverlay from './camera/components/FocusOverlay';
-import BackButton from './camera/components/BackButton';
-import { useFormatsAndFps } from './camera/hooks/useFormatsAndFps';
-import { useReconfiguration } from './camera/hooks/useReconfiguration';
-import { useRecording } from './camera/hooks/useRecording';
-import { useFpsCycler } from './camera/hooks/useFpsCycler';
+import type { Camera } from 'react-native-vision-camera';
+import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import BackButton from '../components/BackButton';
+import ControlsOverlay from '../components/ControlsOverlay';
+import FocusOverlay from '../components/FocusOverlay';
+import ToastOverlay from '../components/Toast';
+import VisionCameraView from '../components/VisionCameraView';
+import { useFormatsAndFps } from '../hooks/useFormatsAndFps';
+import { useFpsCycler } from '../hooks/useFpsCycler';
+import { useReconfiguration } from '../hooks/useReconfiguration';
+import { useRecording } from '../hooks/useRecording';
  
 
 interface Point {
@@ -144,11 +144,8 @@ export default function VisionCameraScreen() {
     fps,
     setFps,
     isRecording,
-    isConfiguring,
     showToast,
-    cameraRef,
     pendingFpsRef,
-    pendingResumeRef,
     prevFpsRef,
   });
 

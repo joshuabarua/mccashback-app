@@ -1,17 +1,13 @@
 import { useCallback, useRef } from 'react';
-import type { RefObject, MutableRefObject } from 'react';
-import type { Camera } from 'react-native-vision-camera';
+import type { MutableRefObject } from 'react';
 
 export function useFpsCycler(params: {
   supportedFpsOptions: number[];
   fps: number;
   setFps: (v: number) => void;
   isRecording: boolean;
-  isConfiguring: boolean;
   showToast: (msg: string) => void;
-  cameraRef: RefObject<Camera | null>;
   pendingFpsRef: MutableRefObject<number | null>;
-  pendingResumeRef: MutableRefObject<boolean>;
   prevFpsRef: MutableRefObject<number>;
 }) {
   const {
@@ -19,11 +15,8 @@ export function useFpsCycler(params: {
     fps,
     setFps,
     isRecording,
-    isConfiguring,
     showToast,
-    cameraRef,
     pendingFpsRef,
-    pendingResumeRef,
     prevFpsRef,
   } = params;
 
@@ -38,6 +31,12 @@ export function useFpsCycler(params: {
     if (!options.length) return;
     if (pendingFpsRef.current != null) return; // already changing
 
+    if (isRecording) {
+      // Disable FPS changes while recording to avoid AVFoundation errors
+      showToast('Stop recording to change FPS');
+      return;
+    }
+
     let idx = options.findIndex((v) => v === fps);
     if (idx === -1) {
       const nearest = options.reduce((prev, curr) => (Math.abs(curr - fps) < Math.abs(prev - fps) ? curr : prev), options[0]);
@@ -45,21 +44,9 @@ export function useFpsCycler(params: {
     }
     const next = options[(idx + 1) % options.length];
 
-    if (isRecording) {
-      pendingFpsRef.current = next;
-      prevFpsRef.current = fps;
-      pendingResumeRef.current = true;
-      if (!isConfiguring) {
-        // slight delay to let UI draw toast nicely
-        setTimeout(() => showToast('Pausing recording while changing FPS…'), 50);
-      }
-      try { cameraRef.current?.stopRecording(); } catch {}
-      return;
-    }
-
     prevFpsRef.current = fps;
     setFps(next);
-  }, [supportedFpsOptions, fps, isRecording, isConfiguring, showToast, cameraRef, pendingFpsRef, pendingResumeRef, prevFpsRef, setFps]);
+  }, [supportedFpsOptions, fps, isRecording, showToast, pendingFpsRef, prevFpsRef, setFps]);
 
   return { cycleFps };
 }

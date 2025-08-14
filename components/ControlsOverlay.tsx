@@ -35,7 +35,11 @@ export default function ControlsOverlay({
         </TouchableOpacity>
 
         <View style={styles.iconGroup}>
-          <TouchableOpacity style={[styles.iconButton, { opacity: isConfiguring ? 0.5 : 1 }]} disabled={isConfiguring} onPress={onCycleFps}>
+          <TouchableOpacity
+            style={[styles.iconButton, { opacity: isConfiguring || isRecording ? 0.5 : 1 }]}
+            disabled={isConfiguring || isRecording}
+            onPress={onCycleFps}
+          >
             <Ionicons name="speedometer" size={24} color="white" />
           </TouchableOpacity>
           <Text style={styles.iconSubLabel}>{isConfiguring ? 'Configuring…' : `${effectiveFps} FPS`}</Text>
