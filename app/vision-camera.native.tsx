@@ -1,13 +1,21 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
-import type { CameraDeviceFormat, FrameRateRange } from 'react-native-vision-camera';
+import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import type { Camera } from 'react-native-vision-camera';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import Slider from '@react-native-community/slider';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import VisionCameraView from './camera/components/VisionCameraView';
+import ControlsOverlay from './camera/components/ControlsOverlay';
+import ToastOverlay from './camera/components/Toast';
+import FocusOverlay from './camera/components/FocusOverlay';
+import BackButton from './camera/components/BackButton';
+import { useFormatsAndFps } from './camera/hooks/useFormatsAndFps';
+import { useReconfiguration } from './camera/hooks/useReconfiguration';
+import { useRecording } from './camera/hooks/useRecording';
+import { useFpsCycler } from './camera/hooks/useFpsCycler';
+ 
 
 interface Point {
   x: number;
@@ -16,46 +24,66 @@ interface Point {
 
 export default function VisionCameraScreen() {
   const router = useRouter();
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<Camera | null>(null);
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
+  const insets = useSafeAreaInsets();
   
   // Camera states
   const [isActive, setIsActive] = useState(true);
-  const [isStrobing, setIsStrobing] = useState(false);
-  const [rpm, setRpm] = useState(500);
-  const [flashOn, setFlashOn] = useState(false);
-  const [activeSlider, setActiveSlider] = useState<'strobe' | 'fps' | null>(null);
   const [fps, setFps] = useState(30);
   const [focusPoint, setFocusPoint] = useState<Point | null>(null);
-  
-  const strobeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isConfiguring, setIsConfiguring] = useState(false);
+  const pendingResumeRef = useRef(false);
+  const pendingFpsRef = useRef<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraReadyRef = useRef(false);
+  const prevFpsRef = useRef(fps);
+  const [remounting, setRemounting] = useState(false);
 
-  // Pick a camera format that supports the desired FPS
-  const selectedFormat = useMemo(() => {
-    if (!device) return undefined;
-    const formats: CameraDeviceFormat[] = device.formats ?? [];
-    let best = formats.find((f: CameraDeviceFormat) =>
-      (f.frameRateRanges as FrameRateRange[] | undefined)?.some((r: FrameRateRange) => fps >= r.minFrameRate && fps <= r.maxFrameRate)
-    );
-    if (best) return best;
-    let closest = undefined as CameraDeviceFormat | undefined;
-    let closestDelta = Number.POSITIVE_INFINITY;
-    for (const f of formats) {
-      for (const r of (f.frameRateRanges as FrameRateRange[] | undefined) ?? []) {
-        const delta = fps < r.minFrameRate
-          ? r.minFrameRate - fps
-          : fps > r.maxFrameRate
-            ? fps - r.maxFrameRate
-            : 0;
-        if (delta < closestDelta) {
-          closestDelta = delta;
-          closest = f;
-        }
-      }
-    }
-    return closest;
-  }, [device, fps]);
+  // Toast helper (defined before usage)
+  const showToast = useCallback((message: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast(message);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 1500);
+  }, []);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
+  
+  
+  // Formats and FPS selections (extracted hook)
+  const { selectedFormat, effectiveFps, cameraFps, supportedFpsOptions } = useFormatsAndFps(device, fps, setFps);
+
+  // Camera key: include fps only when we actually pass it
+  const cameraKey = useMemo(() => {
+    const base = `${selectedFormat?.videoWidth}x${selectedFormat?.videoHeight}-${selectedFormat?.minFps}-${selectedFormat?.maxFps}`;
+    const fpsPart = cameraFps == null ? 'auto' : String(cameraFps);
+    return `${base}-${fpsPart}`;
+  }, [selectedFormat, cameraFps]);
+
+  
+
+  // Handle configuring state and iOS remounts (extracted)
+  useReconfiguration({
+    device,
+    fps,
+    selectedFormat,
+    prevFpsRef,
+    setIsConfiguring,
+    setRemounting,
+    setIsActive,
+    cameraReadyRef,
+  });
+
+  
 
   // Request camera permission on mount
   useEffect(() => {
@@ -63,28 +91,6 @@ export default function VisionCameraScreen() {
       requestPermission();
     }
   }, [hasPermission, requestPermission]);
-
-  // Strobe effect logic
-  useEffect(() => {
-    if (isStrobing) {
-      const interval = 60000 / rpm; // Convert RPM to milliseconds
-      strobeIntervalRef.current = setInterval(() => {
-        setFlashOn(prev => !prev);
-      }, interval);
-    } else {
-      if (strobeIntervalRef.current) {
-        clearInterval(strobeIntervalRef.current);
-        strobeIntervalRef.current = null;
-      }
-      setFlashOn(false);
-    }
-
-    return () => {
-      if (strobeIntervalRef.current) {
-        clearInterval(strobeIntervalRef.current);
-      }
-    };
-  }, [isStrobing, rpm]);
 
   // Manual focus function
   const focus = useCallback((point: Point) => {
@@ -110,22 +116,56 @@ export default function VisionCameraScreen() {
       runOnJS(focus)({ x, y });
     });
 
-  const toggleStrobe = () => {
-    setIsStrobing(!isStrobing);
-  };
-
-  const handleRpmChange = (value: number) => {
-    setRpm(value);
-  };
-
-  const toggleStrobeSlider = () => {
-    setActiveSlider(activeSlider === 'strobe' ? null : 'strobe');
-  };
+  // removed strobe/flash feature
 
   const handleBack = () => {
     setIsActive(false);
     router.back();
   };
+
+  // Recording logic (extracted)
+  const { isRecording, startRecording, stopRecording } = useRecording({
+    cameraRef,
+    isActive,
+    isConfiguring,
+    showToast,
+    pendingResumeRef,
+    pendingFpsRef,
+    setFps,
+    cameraFps,
+    fps,
+    cameraReadyRef,
+  });
+
+  // Wire the real isRecording back into the cycler hook via closure update
+  // Note: our cycler hook reads "isRecording" from its closure. Recreate handler when this changes.
+  const { cycleFps } = useFpsCycler({
+    supportedFpsOptions,
+    fps,
+    setFps,
+    isRecording,
+    isConfiguring,
+    showToast,
+    cameraRef,
+    pendingFpsRef,
+    pendingResumeRef,
+    prevFpsRef,
+  });
+
+  // Debug: log selected format on change
+  useEffect(() => {
+    if (!selectedFormat) return;
+    console.log('Selected format change:', {
+      w: selectedFormat.videoWidth,
+      h: selectedFormat.videoHeight,
+      min: selectedFormat.minFps,
+      max: selectedFormat.maxFps,
+      targetFps: fps,
+      cameraFps,
+    });
+  }, [selectedFormat, fps, cameraFps]);
+
+  
 
   if (!hasPermission) {
     return (
@@ -149,122 +189,36 @@ export default function VisionCameraScreen() {
   return (
     <View style={styles.container}>
       <GestureDetector gesture={tapGesture}>
-        <Camera
-          ref={cameraRef}
-          style={styles.camera}
-          device={device}
+        <VisionCameraView
+          remounting={remounting}
+          cameraKey={cameraKey}
+          cameraRef={cameraRef}
+          device={device!}
           isActive={isActive}
-          torch={flashOn ? 'on' : 'off'}
-          format={selectedFormat}
+          cameraFps={cameraFps}
+          selectedFormat={selectedFormat}
+          onInitialized={() => { cameraReadyRef.current = true; }}
         />
       </GestureDetector>
 
+      {/* Toast */}
+      {toast && <ToastOverlay message={toast} bottom={140 + insets.bottom} />}
+
       {/* Focus indicator */}
-      {focusPoint && (
-        <View 
-          style={[
-            styles.focusIndicator,
-            {
-              left: focusPoint.x - 25,
-              top: focusPoint.y - 25,
-            }
-          ]}
-        />
-      )}
+      <FocusOverlay point={focusPoint} />
 
       {/* Back button */}
-      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-        <Ionicons name="arrow-back" size={24} color="white" />
-      </TouchableOpacity>
+      <BackButton onPress={handleBack} />
 
       {/* Control overlay */}
-      <BlurView
-        intensity={20}
-        tint="dark"
-        style={styles.controlsOverlay}
-      >
-        {/* Control Icons Row */}
-        <View style={styles.iconRow}>
-          {/* Power Button for Strobe */}
-          <TouchableOpacity 
-            style={[
-              styles.iconButton,
-              { backgroundColor: isStrobing ? '#ff6b6b' : 'rgba(255, 255, 255, 0.2)' }
-            ]} 
-            onPress={toggleStrobe}
-          >
-            <Ionicons 
-              name="power" 
-              size={24} 
-              color={isStrobing ? "white" : "#cccccc"} 
-            />
-          </TouchableOpacity>
-
-          {/* Strobe RPM Icon */}
-          <TouchableOpacity
-            style={[
-              styles.iconButton,
-              { backgroundColor: activeSlider === 'strobe' ? '#a5d4a5' : 'rgba(255, 255, 255, 0.2)' }
-            ]}
-            onPress={toggleStrobeSlider}
-          >
-            <Ionicons name="flashlight" size={24} color="white" />
-          </TouchableOpacity>
-
-          {/* FPS Icon */}
-          <TouchableOpacity
-            style={[
-              styles.iconButton,
-              { backgroundColor: activeSlider === 'fps' ? '#a5d4a5' : 'rgba(255, 255, 255, 0.2)' }
-            ]}
-            onPress={() => setActiveSlider(activeSlider === 'fps' ? null : 'fps')}
-          >
-            <Ionicons name="speedometer" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Contextual Sliders */}
-        {activeSlider === 'strobe' && (
-          <View style={styles.sliderContainer}>
-            <Text style={styles.sliderLabel}>Strobe RPM: {rpm}</Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={1}
-              maximumValue={1000}
-              value={rpm}
-              onValueChange={handleRpmChange}
-              minimumTrackTintColor="#a5d4a5"
-              maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-            />
-          </View>
-        )}
-
-        {activeSlider === 'fps' && (
-          <View style={styles.sliderContainer}>
-            <Text style={styles.sliderLabel}>FPS: {fps}</Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={15}
-              maximumValue={120}
-              step={1}
-              value={fps}
-              onValueChange={setFps}
-              minimumTrackTintColor="#a5d4a5"
-              maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-            />
-            {!selectedFormat && (
-              <Text style={styles.warningText}>
-                No exact format supports {fps} FPS. Using closest available.
-              </Text>
-            )}
-          </View>
-        )}
-
-        {/* Focus instruction */}
-        <Text style={styles.instructionText}>
-          Tap anywhere on screen to focus
-        </Text>
-      </BlurView>
+      <ControlsOverlay
+        insetsBottom={insets.bottom}
+        isRecording={isRecording}
+        isConfiguring={isConfiguring}
+        effectiveFps={effectiveFps}
+        onRecordPress={isRecording ? stopRecording : startRecording}
+        onCycleFps={cycleFps}
+      />
     </View>
   );
 }
@@ -273,80 +227,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: 'black',
-  },
-  camera: {
-    flex: 1,
-  },
-  focusIndicator: {
-    position: 'absolute',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 2,
-    borderColor: '#a5d4a5',
-    backgroundColor: 'transparent',
-    zIndex: 1000,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 25,
-    padding: 10,
-    zIndex: 1000,
-  },
-  controlsOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingVertical: 30,
-    paddingBottom: 50,
-  },
-  iconRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 30,
-  },
-  iconButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  sliderContainer: {
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  sliderLabel: {
-    color: 'white',
-    fontSize: 16,
-    marginBottom: 10,
-    fontWeight: '500',
-  },
-  slider: {
-    width: 250,
-    height: 40,
-  },
-  instructionText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 15,
-    fontStyle: 'italic',
-  },
-  warningText: {
-    color: '#ffcc66',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 6,
   },
   permissionText: {
     color: 'white',

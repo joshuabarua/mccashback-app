@@ -14,6 +14,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to enable strobe and scanning features.",
         "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording.",
+        "NSPhotoLibraryAddUsageDescription": "Allow saving recorded videos to your Photos library.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -36,6 +37,7 @@
     "plugins": [
       "expo-router",
       "react-native-vision-camera",
+      "expo-media-library",
       [
         "expo-splash-screen",
         {

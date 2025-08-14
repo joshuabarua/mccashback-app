@@ -8,7 +8,7 @@ export default function VisionCameraWebPlaceholder() {
 
   return (
     <View style={styles.container}>
-      <Ionicons name="md-desktop" size={48} color="#fff" />
+      <Ionicons name="desktop-outline" size={48} color="#fff" />
       <Text style={styles.title}>Vision Camera not supported on Web</Text>
       <Text style={styles.subtitle}>
         This screen is implemented using react-native-vision-camera, which requires running on iOS or Android using an Expo Dev Client.

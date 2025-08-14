@@ -12,8 +12,7 @@ export default function HomeScreen() {
   };
 
   const handleVisionCameraPress = () => {
-    // For now, show an alert since we need EAS build for vision camera
-    alert('Vision Camera requires EAS Build. Use "eas build" to test this feature.');
+    router.push('/vision-camera');
   };
 
   return (
