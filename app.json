@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mccashback",
+    "name": "Automation",
     "slug": "mccashback",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,19 +9,21 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "backgroundColor": "#ff5500",
       "supportsTablet": true,
       "bundleIdentifier": "com.joshuabarua.mccashback",
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera to enable strobe and scanning features.",
+        "NSCameraUsageDescription": "This app uses the camera for scanning and recording features.",
         "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording.",
         "NSPhotoLibraryAddUsageDescription": "Allow saving recorded videos to your Photos library.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDisplayName": "Automation"
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#ff5500"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.mccashback",
@@ -32,7 +34,9 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "themeColor": "#ff5500",
+      "backgroundColor": "#ff5500"
     },
     "plugins": [
       "expo-router",
@@ -44,7 +48,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#ff5500"
         }
       ]
     ],
