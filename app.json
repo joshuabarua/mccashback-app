@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "backgroundColor": "#ff5500",
+      "buildNumber": "1",
       "supportsTablet": true,
       "bundleIdentifier": "com.joshuabarua.mccashback",
       "infoPlist": {
@@ -27,9 +27,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.mccashback",
-      "permissions": [
-        "android.permission.CAMERA"
-      ]
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
