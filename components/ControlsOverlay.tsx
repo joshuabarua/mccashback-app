@@ -7,18 +7,20 @@ export type ControlsOverlayProps = {
   insetsBottom: number;
   isRecording: boolean;
   isConfiguring: boolean;
-  effectiveFps: number;
+  shutterLabel: string;
   onRecordPress: () => void;
-  onCycleFps: () => void;
+  onShutterPress: () => void;
+  shutterDisabled?: boolean;
 };
 
 export default function ControlsOverlay({
   insetsBottom,
   isRecording,
   isConfiguring,
-  effectiveFps,
+  shutterLabel,
   onRecordPress,
-  onCycleFps,
+  onShutterPress,
+  shutterDisabled,
 }: ControlsOverlayProps) {
   return (
     <BlurView intensity={20} tint="dark" style={[styles.controlsOverlay, { paddingBottom: 20 + insetsBottom }]}>
@@ -36,16 +38,18 @@ export default function ControlsOverlay({
 
         <View style={styles.iconGroup}>
           <TouchableOpacity
-            style={[styles.iconButton, { opacity: isConfiguring || isRecording ? 0.5 : 1 }]}
-            disabled={isConfiguring || isRecording}
-            onPress={onCycleFps}
+            style={[
+              styles.iconButton,
+              { opacity: isConfiguring || isRecording || shutterDisabled ? 0.35 : 1 },
+            ]}
+            disabled={isConfiguring || isRecording || !!shutterDisabled}
+            onPress={onShutterPress}
           >
-            <Ionicons name="speedometer" size={24} color="white" />
+            <Ionicons name="aperture" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.iconSubLabel}>{isConfiguring ? 'Configuring…' : `${effectiveFps} FPS`}</Text>
+          <Text style={styles.iconSubLabel}>{shutterDisabled ? 'Not supported' : (isConfiguring ? 'Configuring…' : shutterLabel)}</Text>
         </View>
       </View>
-      <Text style={[styles.instructionText, { marginBottom: 6 }]}>Tap anywhere on screen to focus</Text>
     </BlurView>
   );
 }
@@ -86,12 +90,5 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 12,
     fontWeight: '600',
-  },
-  instructionText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 15,
-    fontStyle: 'italic',
   },
 });

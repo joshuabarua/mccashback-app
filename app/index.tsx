@@ -62,11 +62,6 @@ export default function HomeScreen() {
               </Text>
             </View>
 
-            <View style={styles.descriptionContainer}>
-              <Text style={styles.techText}>
-                Over 10 billion possible combinations ensure that no two experiences are identical, making each encounter with the installation a singular moment in an endless musical journey.
-              </Text>
-            </View>
             <Text style={styles.footer}>
               Where automation meets artistry in perpetual motion
             </Text>
@@ -111,14 +106,14 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
-    paddingTop: 100,
+    paddingTop: 60,
+    gap: 20,
   },
   artistName: {
     fontSize: 24,
     fontWeight: '300',
     color: '#4a4a4a',
     letterSpacing: 2,
-    marginBottom: 12,
   },
   title: {
     fontSize: 32,
@@ -126,10 +121,8 @@ const styles = StyleSheet.create({
     color: '#5a5a5a',
     textAlign: 'center',
     letterSpacing: 1,
-    marginBottom: 36,
   },
   descriptionContainer: {
-    marginBottom: 36,
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
     padding: 24,
     borderRadius: 15,
@@ -142,20 +135,7 @@ const styles = StyleSheet.create({
     color: '#6a6a6a',
     textAlign: 'center',
   },
-  techInfo: {
-    marginBottom: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    padding: 20,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  techText: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#7a7a7a',
-    textAlign: 'center',
-  },
+  
   strobeButton: {
     backgroundColor: '#4a4a4a',
     paddingVertical: 20,
@@ -178,6 +158,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
     letterSpacing: 1,
-    marginTop: 8,
   },
 });

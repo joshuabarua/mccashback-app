@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +13,7 @@ import FocusOverlay from '../components/FocusOverlay';
 import ToastOverlay from '../components/Toast';
 import VisionCameraView from '../components/VisionCameraView';
 import { useFormatsAndFps } from '../hooks/useFormatsAndFps';
-import { useFpsCycler } from '../hooks/useFpsCycler';
+import Exposure from '../native/Exposure';
 import { useReconfiguration } from '../hooks/useReconfiguration';
 import { useRecording } from '../hooks/useRecording';
  
@@ -60,7 +61,7 @@ export default function VisionCameraScreen() {
   
   
   // Formats and FPS selections (extracted hook)
-  const { selectedFormat, effectiveFps, cameraFps, supportedFpsOptions } = useFormatsAndFps(device, fps, setFps);
+  const { selectedFormat, effectiveFps, cameraFps } = useFormatsAndFps(device, fps, setFps);
 
   // Camera key: include fps only when we actually pass it
   const cameraKey = useMemo(() => {
@@ -70,7 +71,6 @@ export default function VisionCameraScreen() {
   }, [selectedFormat, cameraFps]);
 
   
-
   // Handle configuring state and iOS remounts (extracted)
   useReconfiguration({
     device,
@@ -83,7 +83,85 @@ export default function VisionCameraScreen() {
     cameraReadyRef,
   });
 
-  
+  // Shutter/exposure scaffold state
+  const [exposureMode, setExposureMode] = useState<'auto' | 'manual'>('auto');
+  const [currentShutterNs, setCurrentShutterNs] = useState<number | null>(null);
+  const [showShutterPanel, setShowShutterPanel] = useState(false);
+  const [supportsManual, setSupportsManual] = useState<boolean>(false);
+  const shutterLabel = useMemo(() => {
+    if (exposureMode === 'auto' || !currentShutterNs) return 'Auto Shutter';
+    const seconds = currentShutterNs / 1e9;
+    if (seconds >= 0.5) return `${seconds.toFixed(1)}s`;
+    const denom = Math.round(1 / seconds);
+    return `1/${denom}s`;
+  }, [exposureMode, currentShutterNs]);
+
+  const onToggleShutter = useCallback(async () => {
+    if (!supportsManual) {
+      showToast('Manual shutter not supported');
+      return;
+    }
+    try {
+      if (exposureMode === 'auto') {
+        const fpsForShutter = effectiveFps || fps || 30;
+        const exposureNs = Math.round(1e9 / (2 * fpsForShutter)); // 180° shutter
+        await Exposure.setManualExposure(exposureNs);
+        setCurrentShutterNs(exposureNs);
+        setExposureMode('manual');
+        setShowShutterPanel(true);
+        showToast(`Shutter ${Math.round(fpsForShutter * 2)}° (~${(1e9 / exposureNs).toFixed(0)} fps equiv)`);
+      } else {
+        await Exposure.enableAutoExposure();
+        setExposureMode('auto');
+        setCurrentShutterNs(null);
+        setShowShutterPanel(false);
+        showToast('Shutter Auto');
+      }
+    } catch (e) {
+      console.warn('Shutter toggle failed', e);
+      showToast('Shutter not supported');
+    }
+  }, [exposureMode, effectiveFps, fps, showToast, supportsManual]);
+
+  // Slider configuration (log-scale between ~1/2000s and 1/fps)
+  const maxSeconds = useMemo(() => 1 / (effectiveFps || fps || 30), [effectiveFps, fps]);
+  const minSeconds = useMemo(() => Math.min(maxSeconds / 16, 1 / 2000), [maxSeconds]);
+  const sliderValueFromNs = useCallback((ns: number | null) => {
+    if (!ns) return 0.5;
+    const s = ns / 1e9;
+    const t = (Math.log(s) - Math.log(minSeconds)) / (Math.log(maxSeconds) - Math.log(minSeconds));
+    return Math.max(0, Math.min(1, t));
+  }, [minSeconds, maxSeconds]);
+  const nsFromSliderValue = useCallback((t: number) => {
+    const s = Math.exp(Math.log(minSeconds) + t * (Math.log(maxSeconds) - Math.log(minSeconds)));
+    return Math.round(s * 1e9);
+  }, [minSeconds, maxSeconds]);
+
+  const handleSliderChange = useCallback((t: number) => {
+    const ns = nsFromSliderValue(t);
+    setCurrentShutterNs(ns);
+  }, [nsFromSliderValue]);
+
+  const handleSliderComplete = useCallback(async (t: number) => {
+    const ns = nsFromSliderValue(t);
+    try {
+      await Exposure.setManualExposure(ns);
+      setCurrentShutterNs(ns);
+    } catch {
+      showToast('Shutter not supported');
+    }
+  }, [nsFromSliderValue, showToast]);
+
+  const setPreset180 = useCallback(async () => {
+    const fpsForShutter = effectiveFps || fps || 30;
+    const ns = Math.round(1e9 / (2 * fpsForShutter));
+    try {
+      await Exposure.setManualExposure(ns);
+      setCurrentShutterNs(ns);
+    } catch {
+      showToast('Shutter not supported');
+    }
+  }, [effectiveFps, fps, showToast]);
 
   // Request camera permission on mount
   useEffect(() => {
@@ -110,7 +188,7 @@ export default function VisionCameraScreen() {
     } catch (error) {
       console.log('Focus failed:', error);
     }
-  }, []);
+  }, [showToast]);
 
   // Tap gesture for manual focus
   const tapGesture = Gesture.Tap()
@@ -139,17 +217,20 @@ export default function VisionCameraScreen() {
     cameraReadyRef,
   });
 
-  // Wire the real isRecording back into the cycler hook via closure update
-  // Note: our cycler hook reads "isRecording" from its closure. Recreate handler when this changes.
-  const { cycleFps } = useFpsCycler({
-    supportedFpsOptions,
-    fps,
-    setFps,
-    isRecording,
-    showToast,
-    pendingFpsRef,
-    prevFpsRef,
-  });
+  // Query exposure capabilities on mount
+  useEffect(() => {
+    let mounted = true;
+    Exposure.getExposureCapabilities()
+      .then((caps) => {
+        if (mounted) setSupportsManual(!!caps.supportsManual);
+      })
+      .catch(() => {
+        if (mounted) setSupportsManual(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Debug: log selected format on change
   useEffect(() => {
@@ -209,14 +290,51 @@ export default function VisionCameraScreen() {
       {/* Back button */}
       <BackButton onPress={handleBack} />
 
+      {/* Shutter panel */}
+      {showShutterPanel && supportsManual && (
+        <View style={[styles.shutterPanel, { bottom: 100 + insets.bottom }]}>
+          <Text style={styles.shutterBadge}>{shutterLabel}</Text>
+          <View style={styles.shutterRow}>
+            <Text style={styles.shutterTick}>{(() => {
+              const s = minSeconds;
+              return s >= 0.5 ? `${s.toFixed(1)}s` : `1/${Math.round(1 / s)}s`;
+            })()}</Text>
+            <Slider
+              value={sliderValueFromNs(currentShutterNs ?? Math.round(1e9 / (2 * (effectiveFps || fps || 30))))}
+              minimumValue={0}
+              maximumValue={1}
+              onValueChange={handleSliderChange}
+              onSlidingComplete={handleSliderComplete}
+              minimumTrackTintColor="#a5d4a5"
+              maximumTrackTintColor="rgba(255,255,255,0.3)"
+              thumbTintColor="#a5d4a5"
+              style={{ flex: 1, marginHorizontal: 12 }}
+            />
+            <Text style={styles.shutterTick}>{(() => {
+              const s = maxSeconds;
+              return s >= 0.5 ? `${s.toFixed(1)}s` : `1/${Math.round(1 / s)}s`;
+            })()}</Text>
+          </View>
+          <View style={styles.shutterButtons}>
+            <TouchableOpacity style={styles.shutterButton} onPress={setPreset180}>
+              <Text style={styles.shutterButtonText}>180°</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.shutterButton} onPress={() => setShowShutterPanel(false)}>
+              <Text style={styles.shutterButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Control overlay */}
       <ControlsOverlay
         insetsBottom={insets.bottom}
         isRecording={isRecording}
         isConfiguring={isConfiguring}
-        effectiveFps={effectiveFps}
+        shutterLabel={shutterLabel}
         onRecordPress={isRecording ? stopRecording : startRecording}
-        onCycleFps={cycleFps}
+        onShutterPress={onToggleShutter}
+        shutterDisabled={!supportsManual}
       />
     </View>
   );
@@ -249,5 +367,48 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     textAlign: 'center',
+  },
+  shutterPanel: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  shutterRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shutterTick: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    width: 60,
+    textAlign: 'center',
+  },
+  shutterBadge: {
+    alignSelf: 'center',
+    color: 'white',
+    fontWeight: '700',
+  },
+  shutterButtons: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  shutterButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  shutterButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
 });

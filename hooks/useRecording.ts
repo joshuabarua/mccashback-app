@@ -38,9 +38,9 @@ export function useRecording(params: {
   const saveToPhotos = useCallback(async (uri?: string) => {
     if (!uri) return;
     try {
-      let perm = await MediaLibrary.getPermissionsAsync();
+      let perm = await MediaLibrary.getPermissionsAsync(true);
       if (!perm.granted) {
-        perm = await MediaLibrary.requestPermissionsAsync({ writeOnly: true });
+        perm = await MediaLibrary.requestPermissionsAsync(true);
       }
       if (perm.granted) {
         await MediaLibrary.saveToLibraryAsync(uri);

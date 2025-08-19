@@ -32,6 +32,7 @@ export default function VisionCameraView({
       style={styles.camera}
       device={device}
       isActive={isActive}
+      torch="on"
       video
       fps={cameraFps}
       format={selectedFormat}
