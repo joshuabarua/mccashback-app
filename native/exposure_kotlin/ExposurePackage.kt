@@ -1,4 +1,4 @@
-package com.anonymous.mccashback
+package com.joshuabarua.mccashback
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
