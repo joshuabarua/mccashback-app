@@ -2,10 +2,37 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Animated, Easing, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect, useRef } from 'react';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const pulse = useRef(new Animated.Value(1)).current;
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const bottomGap = Math.max(16, Math.min(32, height * 0.04));
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.06,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1.0,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
 
   const handleVisionCameraPress = () => {
     router.push('/vision-camera');
@@ -19,7 +46,10 @@ export default function HomeScreen() {
         style={styles.container}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: insets.bottom + bottomGap + 100 },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
@@ -30,25 +60,38 @@ export default function HomeScreen() {
               <Text style={styles.description}>
                 ✨ A generative sound sculpture that creates an infinite composition through the interplay of mechanical automation and digital processing. Each moment is unique, born from the tension between predictable patterns and chaotic emergence.
               </Text>
+            </View>
 
+            <View style={styles.descriptionContainer}>
               <Text style={styles.techText}>
                 Over 10 billion possible combinations ensure that no two experiences are identical, making each encounter with the installation a singular moment in an endless musical journey.
               </Text>
             </View>
+            <Text style={styles.footer}>
+              Where automation meets artistry in perpetual motion
+            </Text>
+          </View>
+        </ScrollView>
 
+        {/* Bottom-anchored button */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: insets.bottom + bottomGap,
+            alignItems: 'center',
+          }}
+        >
+          <Animated.View style={{ transform: [{ scale: pulse }] }}>
             <TouchableOpacity
               style={[styles.strobeButton, { backgroundColor: '#6b6bff' }]}
               onPress={handleVisionCameraPress}
             >
               <Ionicons name="eye" size={36} color="white" />
             </TouchableOpacity>
-            <Text style={styles.buttonLabel}>Vision Camera (Manual Focus)</Text>
-
-            <Text style={styles.footer}>
-              Where automation meets artistry in perpetual motion
-            </Text>
-          </View>
-        </ScrollView>
+          </Animated.View>
+        </View>
       </LinearGradient>
     </View>
   );
@@ -63,18 +106,19 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 32,
+    paddingVertical: 24,
   },
   content: {
     alignItems: 'center',
-    paddingTop: 80,
+    paddingTop: 100,
   },
   artistName: {
     fontSize: 24,
     fontWeight: '300',
     color: '#4a4a4a',
     letterSpacing: 2,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   title: {
     fontSize: 32,
@@ -82,19 +126,19 @@ const styles = StyleSheet.create({
     color: '#5a5a5a',
     textAlign: 'center',
     letterSpacing: 1,
-    marginBottom: 30,
+    marginBottom: 36,
   },
   descriptionContainer: {
-    marginBottom: 30,
+    marginBottom: 36,
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    padding: 20,
+    padding: 24,
     borderRadius: 15,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   description: {
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 26,
     color: '#6a6a6a',
     textAlign: 'center',
   },
@@ -108,7 +152,7 @@ const styles = StyleSheet.create({
   },
   techText: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 22,
     color: '#7a7a7a',
     textAlign: 'center',
   },
@@ -119,7 +163,6 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     borderWidth: 1,
     borderColor: '#3a3a3a',
-    marginBottom: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -135,12 +178,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
     letterSpacing: 1,
-  },
-  buttonLabel: {
-    textAlign: 'center',
-    color: '#7a7a7a',
-    fontSize: 12,
-    marginTop: 10,
-    marginBottom: 20,
+    marginTop: 8,
   },
 });

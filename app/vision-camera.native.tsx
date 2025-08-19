@@ -100,6 +100,8 @@ export default function VisionCameraScreen() {
     try {
       camera.focus(point);
       setFocusPoint(point);
+      // Inform the user that manual focus has been set
+      showToast('Manual focus set');
       
       // Clear focus point after 2 seconds
       setTimeout(() => {

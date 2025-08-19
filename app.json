@@ -29,13 +29,6 @@
       "package": "com.anonymous.mccashback",
       "versionCode": 1
     },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png",
-      "themeColor": "#ff5500",
-      "backgroundColor": "#ff5500"
-    },
     "plugins": [
       "expo-router",
       "react-native-vision-camera",
