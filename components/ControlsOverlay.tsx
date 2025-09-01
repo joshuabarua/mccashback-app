@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,20 +7,18 @@ export type ControlsOverlayProps = {
   insetsBottom: number;
   isRecording: boolean;
   isConfiguring: boolean;
-  shutterLabel: string;
   onRecordPress: () => void;
-  onShutterPress: () => void;
-  shutterDisabled?: boolean;
+  zoetropeEnabled: boolean;
+  onZoetropePress: () => void;
 };
 
 export default function ControlsOverlay({
   insetsBottom,
   isRecording,
   isConfiguring,
-  shutterLabel,
   onRecordPress,
-  onShutterPress,
-  shutterDisabled,
+  zoetropeEnabled,
+  onZoetropePress,
 }: ControlsOverlayProps) {
   return (
     <BlurView intensity={20} tint="dark" style={[styles.controlsOverlay, { paddingBottom: 20 + insetsBottom }]}>
@@ -36,19 +34,16 @@ export default function ControlsOverlay({
           <Ionicons name={isRecording ? 'stop' : 'radio-button-on'} size={24} color={isRecording ? 'white' : '#ff4d4d'} />
         </TouchableOpacity>
 
-        <View style={styles.iconGroup}>
-          <TouchableOpacity
-            style={[
-              styles.iconButton,
-              { opacity: isConfiguring || isRecording || shutterDisabled ? 0.35 : 1 },
-            ]}
-            disabled={isConfiguring || isRecording || !!shutterDisabled}
-            onPress={onShutterPress}
-          >
-            <Ionicons name="aperture" size={24} color="white" />
-          </TouchableOpacity>
-          <Text style={styles.iconSubLabel}>{shutterDisabled ? 'Not supported' : (isConfiguring ? 'Configuring…' : shutterLabel)}</Text>
-        </View>
+        <TouchableOpacity
+          style={[
+            styles.iconButton,
+            { backgroundColor: zoetropeEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255, 255, 255, 0.2)', opacity: (isConfiguring || isRecording) ? 0.5 : 1 },
+          ]}
+          disabled={isConfiguring || isRecording}
+          onPress={onZoetropePress}
+        >
+          <Ionicons name="disc" size={24} color={zoetropeEnabled ? '#a5d4a5' : 'white'} />
+        </TouchableOpacity>
       </View>
     </BlurView>
   );
@@ -84,11 +79,5 @@ const styles = StyleSheet.create({
   iconGroup: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconSubLabel: {
-    marginTop: 6,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

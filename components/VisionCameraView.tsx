@@ -12,6 +12,7 @@ export type VisionCameraViewProps = {
   cameraFps: number | undefined;
   selectedFormat: CameraDeviceFormat | undefined;
   onInitialized: () => void;
+  frameProcessor?: any;
 };
 
 export default function VisionCameraView({
@@ -23,6 +24,7 @@ export default function VisionCameraView({
   cameraFps,
   selectedFormat,
   onInitialized,
+  frameProcessor,
 }: VisionCameraViewProps) {
   if (remounting) return <View style={styles.camera} />;
   return (
@@ -37,6 +39,7 @@ export default function VisionCameraView({
       fps={cameraFps}
       format={selectedFormat}
       onInitialized={onInitialized}
+      frameProcessor={frameProcessor}
     />
   );
 }

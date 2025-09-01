@@ -26,7 +26,7 @@
         "backgroundColor": "#ff5500"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.mccashback",
+      "package": "com.joshuabarua.mccashback",
       "versionCode": 1
     },
     "plugins": [

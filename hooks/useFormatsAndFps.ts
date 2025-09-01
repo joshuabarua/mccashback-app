@@ -8,6 +8,7 @@ export type FormatsAndFps = {
   effectiveFps: number;
   cameraFps: number | undefined;
   supportedFpsOptions: number[];
+  deviceMaxFps: number;
 };
 
 export function useFormatsAndFps(
@@ -129,5 +130,6 @@ export function useFormatsAndFps(
     effectiveFps,
     cameraFps,
     supportedFpsOptions,
+    deviceMaxFps: deviceFpsRange.max,
   };
 }

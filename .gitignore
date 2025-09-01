@@ -3,6 +3,11 @@
 # dependencies
 node_modules/
 
+# Allow reading specific dependencies for debugging
+!node_modules/react-native-worklets-core/**
+!node_modules/react-native-vision-camera/**
+!node_modules/react-native-reanimated/**
+
 # Expo
 .expo/
 dist/
