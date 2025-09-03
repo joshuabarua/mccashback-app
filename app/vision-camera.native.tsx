@@ -102,6 +102,11 @@ export default function VisionCameraScreen() {
   // Fixed RPM presets mode (CD player)
   const rpmPresets = useMemo(() => [200, 300, 400, 500] as const, []);
   const [useFixedRpm, setUseFixedRpm] = useState(false);
+  // Visual strobe parameters (frames per revolution and harmonic)
+  const [framesPerRev] = useState<number>(9); // default average across 8–10
+  const [harmonic] = useState<number>(1); // default harmonic
+  // Only show strobe overlay in development builds (testing only)
+  const enableStrobeOverlay = __DEV__;
   // Continuous target RPM with persistence
   const RPM_MIN = 150;
   const RPM_MAX = 600;
@@ -161,6 +166,15 @@ export default function VisionCameraScreen() {
     return `1/${denom}s`;
   }, [exposureMode, currentShutterNs]);
 
+  // Strobe frequency derived from RPM (measured or target) and pattern parameters
+  const rpmForStrobe = useMemo(() => (useFixedRpm ? targetRpm : (rpm ?? targetRpm)), [useFixedRpm, targetRpm, rpm]);
+  const strobeHz = useMemo(() => {
+    const rps = Math.max(0, rpmForStrobe) / 60;
+    const fpr = Math.max(1, framesPerRev);
+    const h = Math.max(1, harmonic);
+    return rps * fpr / h;
+  }, [rpmForStrobe, framesPerRev, harmonic]);
+
   // Removed Zoetrope FPS slider; we auto-set to max when enabling Zoetrope
 
   // Spinning disc animation for auto-estimation state
@@ -178,6 +192,34 @@ export default function VisionCameraScreen() {
   const spinStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${spin.value}deg` }],
   }));
+
+  // Visual strobe overlay animation (flash white at strobeHz duty cycle)
+  const strobePhase = useSharedValue(0);
+  const strobeStyle = useAnimatedStyle(() => {
+    const phase = strobePhase.value % 1;
+    const opacity = phase < 0.5 ? 0.9 : 0;
+    return { opacity };
+  });
+  useEffect(() => {
+    if (!zoetropeEnabled || !enableStrobeOverlay) {
+      cancelAnimation(strobePhase);
+      strobePhase.value = 0;
+      return;
+    }
+    const displayMax = Platform.OS === 'ios' ? 120 : 60;
+    const f = Math.max(0.1, Math.min(displayMax, isFinite(strobeHz) ? strobeHz : 0));
+    if (!(f > 0)) {
+      cancelAnimation(strobePhase);
+      strobePhase.value = 0;
+      return;
+    }
+    const periodMs = Math.max(5, Math.round(1000 / f));
+    strobePhase.value = 0;
+    strobePhase.value = withRepeat(withTiming(1, { duration: periodMs, easing: Easing.linear }), -1, false);
+    return () => {
+      cancelAnimation(strobePhase);
+    };
+  }, [zoetropeEnabled, strobeHz, strobePhase, enableStrobeOverlay]);
 
   // Slider configuration (log-scale between ~1/2000s and 1/fps)
   const maxSeconds = useMemo(() => 1 / (effectiveFps || fps || 30), [effectiveFps, fps]);
@@ -572,6 +614,14 @@ export default function VisionCameraScreen() {
           frameProcessor={zoetropeEnabled && !useFixedRpm ? frameProcessor : undefined}
         />
       </GestureDetector>
+
+      {/* Visual strobe overlay (UI flash), disabled when Zoetrope is off */}
+      {zoetropeEnabled && (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: 'white' }, strobeStyle]}
+        />
+      )}
 
       {/* RPM overlay */}
       {zoetropeEnabled && (

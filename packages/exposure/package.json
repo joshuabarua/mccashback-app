@@ -1,0 +1,14 @@
+{
+  "name": "@app/exposure-native",
+  "version": "0.1.0",
+  "description": "Local iOS Exposure native module (AVFoundation) for manual exposure control.",
+  "license": "MIT",
+  "main": "index.js",
+  "react-native": "index.js",
+  "private": true,
+  "keywords": ["react-native", "exposure", "camera", "ios", "avfoundation"],
+  "author": "",
+  "scripts": {
+    "prepare": "echo 'no build'"
+  }
+}
