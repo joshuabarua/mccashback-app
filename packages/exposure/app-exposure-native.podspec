@@ -5,11 +5,11 @@ Pod::Spec.new do |s|
   s.description  = <<-DESC
     Provides manual exposure control (get capabilities, set manual exposure, enable auto) using AVFoundation.
   DESC
-  s.homepage     = ""
+  s.homepage     = "https://github.com/joshuabarua/mccashback-app"
   s.license      = { :type => "MIT" }
   s.author       = { "" => "" }
   s.platforms    = { :ios => "13.0" }
-  s.source       = { :path => "." }
+  s.source       = { :git => "https://github.com/joshuabarua/mccashback-app.git", :tag => s.version.to_s }
 
   s.source_files = "src/**/*.{h,m,mm,swift}"
 
