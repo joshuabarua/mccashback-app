@@ -1,4 +1,3 @@
-import Slider from '@react-native-community/slider';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, NativeModules, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -6,17 +5,24 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS as runOnJSReanimated, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Camera } from 'react-native-vision-camera';
-import { useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
-import { useRunOnJS } from 'react-native-worklets-core';
+import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import BackButton from '../components/BackButton';
 import ControlsOverlay from '../components/ControlsOverlay';
 import FocusOverlay from '../components/FocusOverlay';
 import ToastOverlay from '../components/Toast';
 import VisionCameraView from '../components/VisionCameraView';
+import ZoetropePanel from '../components/ZoetropePanel';
 import { useFormatsAndFps } from '../hooks/useFormatsAndFps';
 import { useReconfiguration } from '../hooks/useReconfiguration';
 import { useRecording } from '../hooks/useRecording';
-import Exposure, { type ExposureCapabilities } from '../native/Exposure';
+import { useShutterMath, formatShutterLabel } from '../hooks/useShutterMath';
+import { rpmToStrobeHz, findNearestPreset, isWithinTolerance } from '../utils/zoetrope';
+import StrobeOverlay from '../components/StrobeOverlay';
+import { useRpmEstimator } from '../hooks/useRpmEstimator';
+import { useExposureControl } from '../hooks/useExposureControl';
+import ShutterPanel from '../components/ShutterPanel';
+import Exposure from '../native/Exposure';
+import { RPM_MIN, RPM_MAX, SNAP_WINDOW } from '../constants/Zoetrope';
 
 interface Point {
   x: number;
@@ -64,7 +70,7 @@ export default function VisionCameraScreen() {
   
   
   // Formats and FPS selections (extracted hook)
-  const { selectedFormat, effectiveFps, cameraFps, supportedFpsOptions } = useFormatsAndFps(device, fps, setFps);
+  const { selectedFormat, effectiveFps, cameraFps } = useFormatsAndFps(device, fps, setFps);
 
   // Camera key: include fps only when we actually pass it
   const cameraKey = useMemo(() => {
@@ -88,32 +94,23 @@ export default function VisionCameraScreen() {
 
   
 
-  // Shutter/exposure scaffold state
-  const [exposureMode, setExposureMode] = useState<'auto' | 'manual'>('auto');
-  const [currentShutterNs, setCurrentShutterNs] = useState<number | null>(null);
+  // Shutter/exposure UI state and control (extracted)
   const [showShutterPanel, setShowShutterPanel] = useState(false);
-  const [supportsManual, setSupportsManual] = useState<boolean>(false);
-  const [caps, setCaps] = useState<ExposureCapabilities | null>(null);
   // Zoetrope simple mode
   const [zoetropeEnabled, setZoetropeEnabled] = useState(false);
-  // RPM estimation state
-  const [rpm, setRpm] = useState<number | null>(null);
-  const intensityBufferRef = useRef<number[]>([]);
-  const rpmEmaRef = useRef<number | null>(null);
+  // RPM estimation state handled via useRpmEstimator
   // Fixed RPM presets mode (CD player)
   const rpmPresets = useMemo(() => [450, 600, 700, 800, 900] as const, []);
-  const [useFixedRpm, setUseFixedRpm] = useState(false);
+  const [useFixedRpm] = useState(true);
   // Visual strobe parameters (frames per revolution and harmonic)
   const [framesPerRev] = useState<number>(9); // default average across 8–10
   const [harmonic] = useState<number>(1); // default harmonic
   // Only show strobe overlay in development builds (testing only)
-  const enableStrobeOverlay = __DEV__;
+  const enableStrobeOverlay = false; // temporarily disabled (toggle remains in code for future testing)
   // Additional guard: disable flashing overlay by default to avoid rapid flicker
   const [visualStrobeEnabled, setVisualStrobeEnabled] = useState(false);
   // Continuous target RPM with persistence
-  const RPM_MIN = 450;
-  const RPM_MAX = 900;
-  const SNAP_WINDOW = 8;
+  // Zoetrope constants imported from ../constants/Zoetrope
   const [targetRpm, setTargetRpm] = useState<number>(800);
   // Only access AsyncStorage if the native module is actually linked to avoid runtime errors
   const hasRNCAsyncStorage = useMemo(() => {
@@ -146,37 +143,29 @@ export default function VisionCameraScreen() {
     })();
   }, [targetRpm, hasRNCAsyncStorage]);
 
-  // Check if measured RPM matches a typical CD spin rate (nearest preset within tolerance)
-  const cdMatch = useMemo(() => {
-    if (rpm == null) return null as null | { nearest: number; isMatch: boolean; delta: number };
-    let nearest: number = rpmPresets[0];
-    let best = Math.abs(rpm - nearest);
-    for (const p of rpmPresets) {
-      const d = Math.abs(rpm - p);
-      if (d < best) {
-        best = d;
-        nearest = p;
-      }
-    }
-    const tolerance = 10; // rpm tolerance for a "match"
-    return { nearest, isMatch: best <= tolerance, delta: best };
-  }, [rpm, rpmPresets]);
-  const shutterLabel = useMemo(() => {
-    if (exposureMode === 'auto' || !currentShutterNs) return 'Auto Shutter';
-    const seconds = currentShutterNs / 1e9;
-    if (seconds >= 0.5) return `${seconds.toFixed(1)}s`;
-    const denom = Math.round(1 / seconds);
-    return `1/${denom}s`;
-  }, [exposureMode, currentShutterNs]);
+  // Exposure control hook
+  const {
+    exposureMode,
+    setExposureMode,
+    currentShutterNs,
+    setCurrentShutterNs,
+    supportsManual,
+    caps,
+    handleSliderChangeNs,
+    handleSliderCompleteNs,
+    setPreset180,
+  } = useExposureControl({
+    cameraInitialized,
+    effectiveFps,
+    fps,
+    zoetropeEnabled,
+    isConfiguring,
+    cameraReadyRef,
+    pendingZoetropeRef,
+    showToast,
+  });
 
-  // Strobe frequency derived from RPM (measured or target) and pattern parameters
-  const rpmForStrobe = useMemo(() => (useFixedRpm ? targetRpm : (rpm ?? targetRpm)), [useFixedRpm, targetRpm, rpm]);
-  const strobeHz = useMemo(() => {
-    const rps = Math.max(0, rpmForStrobe) / 60;
-    const fpr = Math.max(1, framesPerRev);
-    const h = Math.max(1, harmonic);
-    return rps * fpr / h;
-  }, [rpmForStrobe, framesPerRev, harmonic]);
+  const shutterLabel = useMemo(() => formatShutterLabel(exposureMode, currentShutterNs), [exposureMode, currentShutterNs]);
 
   // Removed Zoetrope FPS slider; we auto-set to max when enabling Zoetrope
 
@@ -196,34 +185,7 @@ export default function VisionCameraScreen() {
     transform: [{ rotate: `${spin.value}deg` }],
   }));
 
-  // Visual strobe overlay animation (flash white at strobeHz duty cycle)
-  const strobePhase = useSharedValue(0);
-  const strobeStyle = useAnimatedStyle(() => {
-    const phase = strobePhase.value % 1;
-    const opacity = phase < 0.5 ? 0.9 : 0;
-    return { opacity };
-  });
-  useEffect(() => {
-    if (!zoetropeEnabled || !enableStrobeOverlay || !visualStrobeEnabled) {
-      cancelAnimation(strobePhase);
-      strobePhase.value = 0;
-      return;
-    }
-    // For safety, cap UI flash frequency to a low, comfortable value
-    const displayMax = 15; // Hz
-    const f = Math.max(0.1, Math.min(displayMax, isFinite(strobeHz) ? strobeHz : 0));
-    if (!(f > 0)) {
-      cancelAnimation(strobePhase);
-      strobePhase.value = 0;
-      return;
-    }
-    const periodMs = Math.max(5, Math.round(1000 / f));
-    strobePhase.value = 0;
-    strobePhase.value = withRepeat(withTiming(1, { duration: periodMs, easing: Easing.linear }), -1, false);
-    return () => {
-      cancelAnimation(strobePhase);
-    };
-  }, [zoetropeEnabled, strobeHz, strobePhase, enableStrobeOverlay, visualStrobeEnabled]);
+  // Visual strobe overlay (animation logic extracted into StrobeOverlay component)
 
   // Guard: disable frame processor at high FPS to avoid memory spikes/crashes
   const shouldUseFrameProcessor = useMemo(() => {
@@ -232,179 +194,34 @@ export default function VisionCameraScreen() {
   }, [zoetropeEnabled, useFixedRpm, effectiveFps, fps]);
 
   // Slider configuration (log-scale between ~1/2000s and 1/fps)
-  const maxSeconds = useMemo(() => 1 / (effectiveFps || fps || 30), [effectiveFps, fps]);
-  const minSeconds = useMemo(() => Math.min(maxSeconds / 16, 1 / 2000), [maxSeconds]);
-  const sliderValueFromNs = useCallback((ns: number | null) => {
-    if (!ns) return 0.5;
-    const s = ns / 1e9;
-    const t = (Math.log(s) - Math.log(minSeconds)) / (Math.log(maxSeconds) - Math.log(minSeconds));
-    return Math.max(0, Math.min(1, t));
-  }, [minSeconds, maxSeconds]);
-  const nsFromSliderValue = useCallback((t: number) => {
-    const s = Math.exp(Math.log(minSeconds) + t * (Math.log(maxSeconds) - Math.log(minSeconds)));
-    return Math.round(s * 1e9);
-  }, [minSeconds, maxSeconds]);
+  const { minSeconds, maxSeconds, sliderValueFromNs, nsFromSliderValue } = useShutterMath(effectiveFps, fps);
 
-  const handleSliderChange = useCallback((t: number) => {
-    const ns = nsFromSliderValue(t);
-    setCurrentShutterNs(ns);
-  }, [nsFromSliderValue]);
+  // RPM estimator hook (autocorrelation + EMA + gating)
+  const { rpm: rpmMeasured, suggestionPreset, setSuggestionPreset, frameProcessor } = useRpmEstimator({
+    enabled: shouldUseFrameProcessor,
+    sampleRate: effectiveFps || fps || 30,
+    rpmMin: RPM_MIN,
+    rpmMax: RPM_MAX,
+    presets: rpmPresets,
+  });
 
-  const handleSliderComplete = useCallback(async (t: number) => {
-    const ns = nsFromSliderValue(t);
-    try {
-      await Exposure.setManualExposure(ns);
-      setCurrentShutterNs(ns);
-    } catch {
-      showToast('Shutter not supported');
-    }
-  }, [nsFromSliderValue, showToast]);
+  // Displayed RPM depends on mode: fixed uses the target, detection uses measured
+  const rpmDisplay = useMemo(() => (useFixedRpm ? targetRpm : rpmMeasured), [useFixedRpm, targetRpm, rpmMeasured]);
 
-  const setPreset180 = useCallback(async () => {
-    const fpsForShutter = effectiveFps || fps || 30;
-    const ns = Math.round(1e9 / (2 * fpsForShutter));
-    try {
-      await Exposure.setManualExposure(ns);
-      setCurrentShutterNs(ns);
-    } catch {
-      showToast('Shutter not supported');
-    }
-  }, [effectiveFps, fps, showToast]);
+  // Check if displayed RPM matches a typical CD spin rate (nearest preset within tolerance)
+  const cdMatch = useMemo(() => {
+    if (rpmDisplay == null) return null as null | { nearest: number; isMatch: boolean; delta: number };
+    const { nearest, delta } = findNearestPreset(rpmDisplay, rpmPresets);
+    const tolerance = 10; // rpm tolerance for a "match"
+    return { nearest, isMatch: isWithinTolerance(rpmDisplay, nearest, tolerance), delta };
+  }, [rpmDisplay, rpmPresets]);
 
-  // Host-side intensity ingestion and RPM estimation using autocorrelation (with clamping + confidence gating)
-  const RN_THRESH = 0.35;
-  const stableFramesRef = useRef(0);
-  const stableSinceRef = useRef<number | null>(null);
-  const [suggestionPreset, setSuggestionPreset] = useState<number | null>(null);
+  // Strobe frequency derived from displayed RPM and pattern parameters
+  const strobeHz = useMemo(() => rpmToStrobeHz(rpmDisplay ?? targetRpm, framesPerRev, harmonic), [rpmDisplay, targetRpm, framesPerRev, harmonic]);
 
-  const onFrameSample = useCallback((avgIntensity: number) => {
-    const buf = intensityBufferRef.current;
-    buf.push(avgIntensity);
-    const maxLen = 512;
-    if (buf.length > maxLen) buf.splice(0, buf.length - maxLen);
-    const sr = effectiveFps || fps || 30; // samples per second
-    if (buf.length < Math.max(32, sr)) return; // need at least ~1s of data
-    // Detrend
-    const mean = buf.reduce((a, b) => a + b, 0) / buf.length;
-    const x = buf.map((v) => v - mean);
-    const N = x.length;
-    // Clamp lags to RPM_MIN..RPM_MAX
-    const kMin = Math.max(2, Math.floor((sr * 60) / RPM_MAX));
-    const kMax = Math.min(Math.floor(N / 2), Math.ceil((sr * 60) / RPM_MIN));
-    if (kMax <= kMin) return;
-    let bestLag = 0;
-    let bestRn = -Infinity;
-    for (let k = kMin; k <= kMax; k++) {
-      let r = 0;
-      let e0 = 0;
-      let e1 = 0;
-      for (let i = 0; i < N - k; i++) {
-        const a = x[i];
-        const b = x[i + k];
-        r += a * b;
-        e0 += a * a;
-        e1 += b * b;
-      }
-      const rn = r / (Math.sqrt(e0 * e1) + 1e-9);
-      if (rn > bestRn) {
-        bestRn = rn;
-        bestLag = k;
-      }
-    }
-    const isEdge = bestLag === kMin || bestLag === kMax;
-    const isConfident = bestLag > 0 && bestRn >= RN_THRESH && !isEdge;
-    if (isConfident) {
-      const hz = sr / bestLag;
-      const rawRpm = Math.max(RPM_MIN, Math.min(RPM_MAX, hz * 60));
-      const alpha = 0.2; // EMA smoothing
-      const prev = rpmEmaRef.current ?? rawRpm;
-      const smoothed = prev + alpha * (rawRpm - prev);
-      rpmEmaRef.current = smoothed;
-      stableFramesRef.current += 1;
-      if (stableFramesRef.current >= 3) {
-        setRpm(smoothed);
-        // Stable-match suggestion gating (>=1s within ±10 of a preset)
-        let nearest: number = rpmPresets[0];
-        let best = Math.abs(smoothed - nearest);
-        for (const p of rpmPresets) {
-          const d = Math.abs(smoothed - p);
-          if (d < best) { best = d; nearest = p; }
-        }
-        const now = Date.now();
-        if (best <= 10) {
-          if (stableSinceRef.current == null) stableSinceRef.current = now;
-          if (now - (stableSinceRef.current ?? now) >= 1000) {
-            setSuggestionPreset(nearest);
-          }
-        } else {
-          stableSinceRef.current = null;
-          setSuggestionPreset(null);
-        }
-      }
-    } else {
-      stableFramesRef.current = 0;
-      rpmEmaRef.current = null;
-      setRpm(null);
-      stableSinceRef.current = null;
-      setSuggestionPreset(null);
-    }
-  }, [effectiveFps, fps, rpmPresets]);
+  // Slider handlers are provided by useExposureControl and passed to ShutterPanel directly
 
-  // Create a JS-callback that can be called from a worklet safely
-  const onFrameSampleJS = useRunOnJS(onFrameSample, [onFrameSample]);
-
-  // Frame processor: compute avg luminance from Y plane (YUV) or RGB sample if available
-  const frameProcessor = useFrameProcessor((frame) => {
-    'worklet';
-    const w = frame.width;
-    const h = frame.height;
-    let avg = -1;
-    if (frame.pixelFormat === 'yuv') {
-      const stride = frame.bytesPerRow;
-      const buf = frame.toArrayBuffer();
-      const data = new Uint8Array(buf);
-      // sample a coarse grid on Y plane (first plane)
-      const stepY = Math.max(1, Math.floor(h / 64));
-      const stepX = Math.max(1, Math.floor(w / 64));
-      let sum = 0;
-      let cnt = 0;
-      for (let y = 0; y < h; y += stepY) {
-        const rowOff = y * stride;
-        for (let x = 0; x < w; x += stepX) {
-          sum += data[rowOff + x];
-          cnt++;
-        }
-      }
-      avg = cnt > 0 ? sum / cnt : -1;
-    } else if (frame.pixelFormat === 'rgb') {
-      const buf = frame.toArrayBuffer();
-      const data = new Uint8Array(buf);
-      const cx = Math.floor(w / 2);
-      const stepY = Math.max(1, Math.floor(h / 64));
-      let sum = 0;
-      let cnt = 0;
-      for (let y = 0; y < h; y += stepY) {
-        const idx = (y * w + cx) * 4; // RGBA
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        cnt++;
-      }
-      avg = cnt > 0 ? sum / cnt : -1;
-    }
-    if (avg >= 0) {
-      // send to JS thread via a pre-created runOnJS callback
-      onFrameSampleJS(avg);
-    }
-  }, [onFrameSampleJS]);
-
-  // When using fixed RPM presets, keep overlay RPM in sync and avoid using frame processor
-  useEffect(() => {
-    if (zoetropeEnabled && useFixedRpm) {
-      setRpm(targetRpm);
-    }
-  }, [zoetropeEnabled, useFixedRpm, targetRpm]);
+  // Inline RPM estimation logic removed in favor of useRpmEstimator
 
   // Request camera permission on mount
   useEffect(() => {
@@ -465,33 +282,26 @@ export default function VisionCameraScreen() {
     const next = !zoetropeEnabled;
     setZoetropeEnabled(next);
     if (next) {
-      // Auto-set FPS to the device's maximum supported fps across formats
-      const list = supportedFpsOptions ?? [];
-      const max = list.length ? Math.max(...list) : (selectedFormat?.maxFps ?? 60);
-      // Stability cap: avoid starting extremely high-FPS sessions which may crash on some devices
-      const chosen = Math.min(60, max);
+      // Default to a comfortable preview FPS to avoid dark image on high FPS
+      const chosen = 30;
       setFps(chosen);
-      if (max > 60) {
-        showToast('Detection disabled above 60 FPS to improve stability');
-      }
-      if (supportsManual) {
-        // Force shortest possible shutter: use device's minimum supported exposure when available
-        const fallback = Math.round(1e9 / (4 * chosen));
-        const desired = caps?.minExposureNs ?? fallback;
-        const minNs = caps?.minExposureNs ?? desired;
-        const maxNs = caps?.maxExposureNs ?? desired;
-        const clamped = Math.max(minNs, Math.min(maxNs, desired));
+      // Do not force manual exposure on enable; keep the user's current exposure mode.
+      // If the user had already selected manual exposure, gently set a reasonable shutter for the chosen FPS.
+      if (supportsManual && exposureMode === 'manual') {
+        const fallback = Math.round(1e9 / (2 * chosen)); // ~1/60s at 30 FPS
+        const minNs = caps?.minExposureNs ?? fallback;
+        const maxNs = caps?.maxExposureNs ?? fallback;
+        const desired = Math.max(minNs, Math.min(maxNs, fallback));
         if (cameraReadyRef.current && !isConfiguring) {
           try {
-            await Exposure.setManualExposure(clamped, caps?.maxIso);
-            setExposureMode('manual');
-            setCurrentShutterNs(clamped);
+            await Exposure.setManualExposure(desired, undefined);
+            setCurrentShutterNs(desired);
           } catch (e) {
             console.error('Exposure.setManualExposure failed on enable', e);
             showToast('Failed to set manual exposure');
           }
         } else {
-          pendingZoetropeRef.current = { type: 'set', ns: clamped };
+          pendingZoetropeRef.current = { type: 'set', ns: desired };
         }
       }
     } else {
@@ -508,27 +318,9 @@ export default function VisionCameraScreen() {
         pendingZoetropeRef.current = { type: 'auto' };
       }
     }
-  }, [zoetropeEnabled, selectedFormat, supportsManual, caps, isConfiguring, setFps, setExposureMode, setCurrentShutterNs, supportedFpsOptions, showToast]);
+  }, [zoetropeEnabled, supportsManual, caps, isConfiguring, setFps, setExposureMode, setCurrentShutterNs, showToast, exposureMode]);
 
-  // Query exposure capabilities only after camera is initialized
-  useEffect(() => {
-    if (!cameraInitialized) return;
-    let mounted = true;
-    Exposure.getExposureCapabilities()
-      .then((caps) => {
-        if (!mounted) return;
-        setSupportsManual(!!caps.supportsManual);
-        setCaps(caps);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setSupportsManual(false);
-        setCaps(null);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [cameraInitialized]);
+  // exposure capability query moved into useExposureControl
 
   // Debug: log selected format on change
   useEffect(() => {
@@ -556,32 +348,7 @@ export default function VisionCameraScreen() {
     console.log('Device formats (sorted by max fps):', formats);
   }, [device]);
 
-  // While Zoetrope is enabled, keep shutter at the shortest supported exposure
-  useEffect(() => {
-    if (!zoetropeEnabled || !supportsManual) return;
-    const targetFps = effectiveFps || fps || 30;
-    const fallback = Math.round(1e9 / (4 * targetFps));
-    const desired = caps?.minExposureNs ?? fallback;
-    const minNs = caps?.minExposureNs ?? desired;
-    const maxNs = caps?.maxExposureNs ?? desired;
-    const clamped = Math.max(minNs, Math.min(maxNs, desired));
-    const tol = 1e6; // 1ms tolerance
-    const needsUpdate = currentShutterNs == null || Math.abs(currentShutterNs - clamped) > tol || exposureMode !== 'manual';
-    if (!needsUpdate) return;
-    if (cameraReadyRef.current && !isConfiguring) {
-      (async () => {
-        try {
-          await Exposure.setManualExposure(clamped, caps?.maxIso);
-          setExposureMode('manual');
-          setCurrentShutterNs(clamped);
-        } catch (e) {
-          console.error('Exposure.setManualExposure failed while maintaining shutter', e);
-        }
-      })();
-    } else {
-      pendingZoetropeRef.current = { type: 'set', ns: clamped };
-    }
-  }, [zoetropeEnabled, supportsManual, caps, effectiveFps, fps, isConfiguring, currentShutterNs, exposureMode]);
+  // shutter maintenance moved into useExposureControl
 
   
 
@@ -643,12 +410,11 @@ export default function VisionCameraScreen() {
       </GestureDetector>
 
       {/* Visual strobe overlay (UI flash) - gated by dev and explicit enable */}
-      {zoetropeEnabled && enableStrobeOverlay && visualStrobeEnabled && (
-        <Animated.View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFillObject, { backgroundColor: 'white' }, strobeStyle]}
-        />
-      )}
+      <StrobeOverlay
+        enabled={zoetropeEnabled && enableStrobeOverlay && visualStrobeEnabled}
+        strobeHz={strobeHz}
+        maxDisplayHz={15}
+      />
 
       {/* RPM overlay */}
       {zoetropeEnabled && (
@@ -660,8 +426,8 @@ export default function VisionCameraScreen() {
               </Animated.View>
             )}
             <Text style={{ color: 'white', fontWeight: '700' }}>
-              {`RPM: ${rpm != null ? Math.round(rpm) : '—'}`}
-              {isEstimating && rpm != null && cdMatch ? `  •  CD: ${cdMatch.nearest}${cdMatch.isMatch ? ' ✓' : ''}` : ''}
+              {`RPM: ${rpmDisplay != null ? Math.round(rpmDisplay) : '—'}`}
+              {isEstimating && rpmDisplay != null && cdMatch ? `  •  CD: ${cdMatch.nearest}${cdMatch.isMatch ? ' ✓' : ''}` : ''}
             </Text>
           </View>
         </View>
@@ -689,10 +455,8 @@ export default function VisionCameraScreen() {
           <TouchableOpacity
             style={styles.suggestionPill}
             onPress={() => {
-              setUseFixedRpm(true);
               setTargetRpm(suggestionPreset);
               setSuggestionPreset(null);
-              stableSinceRef.current = null;
               showToast(`Set to ${suggestionPreset} RPM`);
             }}
           >
@@ -703,95 +467,35 @@ export default function VisionCameraScreen() {
 
       {/* Shutter panel */}
       {showShutterPanel && supportsManual && (
-        <View style={[styles.shutterPanel, { bottom: 100 + insets.bottom }]}> 
-          <Text style={styles.shutterBadge}>{shutterLabel}</Text>
-          <View style={styles.shutterRow}>
-            <Text style={styles.shutterTick}>{(() => {
-              const s = minSeconds;
-              return s >= 0.5 ? `${s.toFixed(1)}s` : `1/${Math.round(1 / s)}s`;
-            })()}</Text>
-            <Slider
-              value={sliderValueFromNs(currentShutterNs ?? Math.round(1e9 / (2 * (effectiveFps || fps || 30))))}
-              minimumValue={0}
-              maximumValue={1}
-              onValueChange={handleSliderChange}
-              onSlidingComplete={handleSliderComplete}
-              minimumTrackTintColor="#a5d4a5"
-              maximumTrackTintColor="rgba(255,255,255,0.3)"
-              thumbTintColor="#a5d4a5"
-              style={{ flex: 1, marginHorizontal: 12 }}
-            />
-            <Text style={styles.shutterTick}>{(() => {
-              const s = maxSeconds;
-              return s >= 0.5 ? `${s.toFixed(1)}s` : `1/${Math.round(1 / s)}s`;
-            })()}</Text>
-          </View>
-          <View style={styles.shutterButtons}>
-            <TouchableOpacity style={styles.shutterButton} onPress={setPreset180}>
-              <Text style={styles.shutterButtonText}>180°</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.shutterButton} onPress={() => setShowShutterPanel(false)}>
-              <Text style={styles.shutterButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ShutterPanel
+          bottom={100 + insets.bottom}
+          shutterLabel={shutterLabel}
+          minSeconds={minSeconds}
+          maxSeconds={maxSeconds}
+          currentShutterNs={currentShutterNs ?? Math.round(1e9 / (2 * (effectiveFps || fps || 30)))}
+          sliderValueFromNs={sliderValueFromNs}
+          nsFromSliderValue={nsFromSliderValue}
+          onValueChangeNs={handleSliderChangeNs}
+          onSlidingCompleteNs={handleSliderCompleteNs}
+          onPreset180={setPreset180}
+          onClose={() => setShowShutterPanel(false)}
+        />
       )}
 
       {/* Zoetrope simple panel */}
       {zoetropeEnabled && (
-        <View style={[styles.shutterPanel, { bottom: 180 + insets.bottom }]}> 
-          {/* Detect toggle + continuous RPM slider */}
-          <View style={[styles.shutterRow, { marginTop: 10 }]}> 
-            <TouchableOpacity
-              style={[styles.shutterButton, { marginRight: 8, backgroundColor: useFixedRpm ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
-              onPress={() => setUseFixedRpm((p) => !p)}
-            >
-              <Text style={styles.shutterButtonText}>{useFixedRpm ? 'Fixed RPM: On' : 'Detect: On'}</Text>
-            </TouchableOpacity>
-            {enableStrobeOverlay && (
-              <TouchableOpacity
-                style={[styles.shutterButton, { marginRight: 8, backgroundColor: visualStrobeEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
-                onPress={() => setVisualStrobeEnabled((p) => !p)}
-              >
-                <Text style={styles.shutterButtonText}>{visualStrobeEnabled ? 'Flash UI: On' : 'Flash UI: Off'}</Text>
-              </TouchableOpacity>
-            )}
-            <Text style={styles.shutterTick}>RPM</Text>
-            <Slider
-              value={targetRpm}
-              minimumValue={RPM_MIN}
-              maximumValue={RPM_MAX}
-              step={1}
-              onValueChange={(val) => {
-                const n = Array.isArray(val) ? (val[0] as number) : (val as number);
-                setTargetRpm(Math.max(RPM_MIN, Math.min(RPM_MAX, Math.round(n))));
-              }}
-              onSlidingComplete={(val) => {
-                const n = Array.isArray(val) ? (val[0] as number) : (val as number);
-                let nearest: number = rpmPresets[0];
-                let best = Math.abs(n - nearest);
-                for (const p of rpmPresets) {
-                  const d = Math.abs(n - p);
-                  if (d < best) { best = d; nearest = p; }
-                }
-                if (best <= SNAP_WINDOW) setTargetRpm(nearest);
-              }}
-              minimumTrackTintColor="#a5d4a5"
-              maximumTrackTintColor="rgba(255,255,255,0.3)"
-              thumbTintColor="#a5d4a5"
-              style={{ flex: 1, marginHorizontal: 12 }}
-            />
-            <Text style={styles.shutterTick}>{(() => {
-              let nearest: number = rpmPresets[0];
-              let best = Math.abs(targetRpm - nearest);
-              for (const p of rpmPresets) {
-                const d = Math.abs(targetRpm - p);
-                if (d < best) { best = d; nearest = p; }
-              }
-              return best <= SNAP_WINDOW ? `CD: ${nearest} ✓` : String(targetRpm);
-            })()}</Text>
-          </View>
-        </View>
+        <ZoetropePanel
+          bottom={180 + insets.bottom}
+          targetRpm={targetRpm}
+          setTargetRpm={setTargetRpm}
+          rpmPresets={rpmPresets}
+          rpmMin={RPM_MIN}
+          rpmMax={RPM_MAX}
+          snapWindow={SNAP_WINDOW}
+          enableStrobeOverlay={enableStrobeOverlay}
+          visualStrobeEnabled={visualStrobeEnabled}
+          setVisualStrobeEnabled={setVisualStrobeEnabled}
+        />
       )}
 
       {/* Control overlay */}
@@ -835,49 +539,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: 'center',
   },
-  shutterPanel: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  shutterRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  shutterTick: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 12,
-    width: 60,
-    textAlign: 'center',
-  },
-  shutterBadge: {
-    alignSelf: 'center',
-    color: 'white',
-    fontWeight: '700',
-  },
-  shutterButtons: {
-    marginTop: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  shutterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-  },
-  shutterButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
+  // Shutter panel styles were moved to components/ShutterPanel.tsx
   suggestionPill: {
     backgroundColor: 'rgba(165,212,165,0.2)',
     borderColor: 'rgba(165,212,165,0.6)',
