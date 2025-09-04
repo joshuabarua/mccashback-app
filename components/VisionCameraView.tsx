@@ -34,12 +34,16 @@ export default function VisionCameraView({
       style={styles.camera}
       device={device}
       isActive={isActive}
-      torch="on"
+      torch="off"
       video
       fps={cameraFps}
       format={selectedFormat}
       onInitialized={onInitialized}
-      frameProcessor={frameProcessor}
+      onError={(e: any) => {
+        // Surface camera errors to logs for diagnosis instead of silent native crashes
+        console.error('VisionCamera onError', e?.nativeEvent ?? e);
+      }}
+      frameProcessor={undefined}
     />
   );
 }

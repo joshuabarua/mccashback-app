@@ -1,22 +1,22 @@
+import Slider from '@react-native-community/slider';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, Platform, NativeModules } from 'react-native';
-import Slider from '@react-native-community/slider';
+import { Image, NativeModules, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS as runOnJSReanimated, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
-import { useRunOnJS } from 'react-native-worklets-core';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Camera } from 'react-native-vision-camera';
 import { useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
+import { useRunOnJS } from 'react-native-worklets-core';
 import BackButton from '../components/BackButton';
 import ControlsOverlay from '../components/ControlsOverlay';
 import FocusOverlay from '../components/FocusOverlay';
 import ToastOverlay from '../components/Toast';
 import VisionCameraView from '../components/VisionCameraView';
 import { useFormatsAndFps } from '../hooks/useFormatsAndFps';
-import Exposure, { type ExposureCapabilities } from '../native/Exposure';
 import { useReconfiguration } from '../hooks/useReconfiguration';
 import { useRecording } from '../hooks/useRecording';
+import Exposure, { type ExposureCapabilities } from '../native/Exposure';
 
 interface Point {
   x: number;
@@ -42,6 +42,7 @@ export default function VisionCameraScreen() {
   const cameraReadyRef = useRef(false);
   const prevFpsRef = useRef(fps);
   const [remounting, setRemounting] = useState(false);
+  const [cameraInitialized, setCameraInitialized] = useState(false);
   // Queue for exposure changes while camera is reconfiguring
   const pendingZoetropeRef = useRef<null | { type: 'set' | 'auto'; ns?: number }>(null);
 
@@ -100,18 +101,20 @@ export default function VisionCameraScreen() {
   const intensityBufferRef = useRef<number[]>([]);
   const rpmEmaRef = useRef<number | null>(null);
   // Fixed RPM presets mode (CD player)
-  const rpmPresets = useMemo(() => [200, 300, 400, 500] as const, []);
+  const rpmPresets = useMemo(() => [450, 600, 700, 800, 900] as const, []);
   const [useFixedRpm, setUseFixedRpm] = useState(false);
   // Visual strobe parameters (frames per revolution and harmonic)
   const [framesPerRev] = useState<number>(9); // default average across 8–10
   const [harmonic] = useState<number>(1); // default harmonic
   // Only show strobe overlay in development builds (testing only)
   const enableStrobeOverlay = __DEV__;
+  // Additional guard: disable flashing overlay by default to avoid rapid flicker
+  const [visualStrobeEnabled, setVisualStrobeEnabled] = useState(false);
   // Continuous target RPM with persistence
-  const RPM_MIN = 150;
-  const RPM_MAX = 600;
+  const RPM_MIN = 450;
+  const RPM_MAX = 900;
   const SNAP_WINDOW = 8;
-  const [targetRpm, setTargetRpm] = useState<number>(300);
+  const [targetRpm, setTargetRpm] = useState<number>(800);
   // Only access AsyncStorage if the native module is actually linked to avoid runtime errors
   const hasRNCAsyncStorage = useMemo(() => {
     if (Platform.OS === 'web') return false;
@@ -201,12 +204,13 @@ export default function VisionCameraScreen() {
     return { opacity };
   });
   useEffect(() => {
-    if (!zoetropeEnabled || !enableStrobeOverlay) {
+    if (!zoetropeEnabled || !enableStrobeOverlay || !visualStrobeEnabled) {
       cancelAnimation(strobePhase);
       strobePhase.value = 0;
       return;
     }
-    const displayMax = Platform.OS === 'ios' ? 120 : 60;
+    // For safety, cap UI flash frequency to a low, comfortable value
+    const displayMax = 15; // Hz
     const f = Math.max(0.1, Math.min(displayMax, isFinite(strobeHz) ? strobeHz : 0));
     if (!(f > 0)) {
       cancelAnimation(strobePhase);
@@ -219,7 +223,13 @@ export default function VisionCameraScreen() {
     return () => {
       cancelAnimation(strobePhase);
     };
-  }, [zoetropeEnabled, strobeHz, strobePhase, enableStrobeOverlay]);
+  }, [zoetropeEnabled, strobeHz, strobePhase, enableStrobeOverlay, visualStrobeEnabled]);
+
+  // Guard: disable frame processor at high FPS to avoid memory spikes/crashes
+  const shouldUseFrameProcessor = useMemo(() => {
+    const f = effectiveFps || fps || 30;
+    return zoetropeEnabled && !useFixedRpm && f <= 60; // only process frames at <=60 FPS
+  }, [zoetropeEnabled, useFixedRpm, effectiveFps, fps]);
 
   // Slider configuration (log-scale between ~1/2000s and 1/fps)
   const maxSeconds = useMemo(() => 1 / (effectiveFps || fps || 30), [effectiveFps, fps]);
@@ -458,10 +468,15 @@ export default function VisionCameraScreen() {
       // Auto-set FPS to the device's maximum supported fps across formats
       const list = supportedFpsOptions ?? [];
       const max = list.length ? Math.max(...list) : (selectedFormat?.maxFps ?? 60);
-      setFps(max);
+      // Stability cap: avoid starting extremely high-FPS sessions which may crash on some devices
+      const chosen = Math.min(60, max);
+      setFps(chosen);
+      if (max > 60) {
+        showToast('Detection disabled above 60 FPS to improve stability');
+      }
       if (supportsManual) {
         // Force shortest possible shutter: use device's minimum supported exposure when available
-        const fallback = Math.round(1e9 / (4 * max));
+        const fallback = Math.round(1e9 / (4 * chosen));
         const desired = caps?.minExposureNs ?? fallback;
         const minNs = caps?.minExposureNs ?? desired;
         const maxNs = caps?.maxExposureNs ?? desired;
@@ -471,7 +486,10 @@ export default function VisionCameraScreen() {
             await Exposure.setManualExposure(clamped, caps?.maxIso);
             setExposureMode('manual');
             setCurrentShutterNs(clamped);
-          } catch {}
+          } catch (e) {
+            console.error('Exposure.setManualExposure failed on enable', e);
+            showToast('Failed to set manual exposure');
+          }
         } else {
           pendingZoetropeRef.current = { type: 'set', ns: clamped };
         }
@@ -482,15 +500,19 @@ export default function VisionCameraScreen() {
           await Exposure.enableAutoExposure();
           setExposureMode('auto');
           setCurrentShutterNs(null);
-        } catch {}
+        } catch (e) {
+          console.error('Exposure.enableAutoExposure failed on disable', e);
+          showToast('Failed to enable auto exposure');
+        }
       } else {
         pendingZoetropeRef.current = { type: 'auto' };
       }
     }
-  }, [zoetropeEnabled, selectedFormat, supportsManual, caps, isConfiguring, setFps, setExposureMode, setCurrentShutterNs, supportedFpsOptions]);
+  }, [zoetropeEnabled, selectedFormat, supportsManual, caps, isConfiguring, setFps, setExposureMode, setCurrentShutterNs, supportedFpsOptions, showToast]);
 
-  // Query exposure capabilities on mount
+  // Query exposure capabilities only after camera is initialized
   useEffect(() => {
+    if (!cameraInitialized) return;
     let mounted = true;
     Exposure.getExposureCapabilities()
       .then((caps) => {
@@ -506,7 +528,7 @@ export default function VisionCameraScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [cameraInitialized]);
 
   // Debug: log selected format on change
   useEffect(() => {
@@ -552,7 +574,9 @@ export default function VisionCameraScreen() {
           await Exposure.setManualExposure(clamped, caps?.maxIso);
           setExposureMode('manual');
           setCurrentShutterNs(clamped);
-        } catch {}
+        } catch (e) {
+          console.error('Exposure.setManualExposure failed while maintaining shutter', e);
+        }
       })();
     } else {
       pendingZoetropeRef.current = { type: 'set', ns: clamped };
@@ -593,6 +617,7 @@ export default function VisionCameraScreen() {
           selectedFormat={selectedFormat}
           onInitialized={() => {
             cameraReadyRef.current = true;
+            setCameraInitialized(true);
             const pending = pendingZoetropeRef.current;
             if (pending) {
               pendingZoetropeRef.current = null;
@@ -607,16 +632,18 @@ export default function VisionCameraScreen() {
                     setExposureMode('auto');
                     setCurrentShutterNs(null);
                   }
-                } catch {}
+                } catch (e) {
+                  console.error('Applying pending exposure change failed', e);
+                }
               })();
             }
           }}
-          frameProcessor={zoetropeEnabled && !useFixedRpm ? frameProcessor : undefined}
+          frameProcessor={shouldUseFrameProcessor ? frameProcessor : undefined}
         />
       </GestureDetector>
 
-      {/* Visual strobe overlay (UI flash), disabled when Zoetrope is off */}
-      {zoetropeEnabled && (
+      {/* Visual strobe overlay (UI flash) - gated by dev and explicit enable */}
+      {zoetropeEnabled && enableStrobeOverlay && visualStrobeEnabled && (
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFillObject, { backgroundColor: 'white' }, strobeStyle]}
@@ -721,6 +748,14 @@ export default function VisionCameraScreen() {
             >
               <Text style={styles.shutterButtonText}>{useFixedRpm ? 'Fixed RPM: On' : 'Detect: On'}</Text>
             </TouchableOpacity>
+            {enableStrobeOverlay && (
+              <TouchableOpacity
+                style={[styles.shutterButton, { marginRight: 8, backgroundColor: visualStrobeEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
+                onPress={() => setVisualStrobeEnabled((p) => !p)}
+              >
+                <Text style={styles.shutterButtonText}>{visualStrobeEnabled ? 'Flash UI: On' : 'Flash UI: Off'}</Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.shutterTick}>RPM</Text>
             <Slider
               value={targetRpm}

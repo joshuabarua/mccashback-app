@@ -52,16 +52,29 @@ class Exposure: NSObject {
     DispatchQueue.main.async {
       guard let d = self.device else { resolve(nil); return }
       do {
-        try d.lockForConfiguration()
-        let seconds = Double(truncating: exposureNs) / 1_000_000_000.0
-        let duration = CMTimeMakeWithSeconds(seconds, preferredTimescale: 1_000_000_000)
-        let isoValue: Float
-        if let isoNum = iso {
-          isoValue = isoNum.floatValue
-        } else {
-          // Use near max ISO to compensate for very short exposure
-          isoValue = d.activeFormat.maxISO
+        guard d.isExposureModeSupported(.custom) else {
+          reject("exposure_not_supported", "Manual exposure not supported on this device", nil)
+          return
         }
+        try d.lockForConfiguration()
+        // Clamp duration to supported range for active format
+        let fmt = d.activeFormat
+        let minSeconds = CMTimeGetSeconds(fmt.minExposureDuration)
+        let maxSeconds = CMTimeGetSeconds(fmt.maxExposureDuration)
+        let requested = Double(truncating: exposureNs) / 1_000_000_000.0
+        let clampedSeconds = max(minSeconds, min(maxSeconds, requested))
+        let duration = CMTimeMakeWithSeconds(clampedSeconds, preferredTimescale: 1_000_000_000)
+
+        // Clamp ISO if provided, otherwise pick a high but valid ISO to compensate for short exposure
+        let minISO = fmt.minISO
+        let maxISO = fmt.maxISO
+        var isoValue: Float
+        if let isoNum = iso?.floatValue {
+          isoValue = max(minISO, min(maxISO, isoNum))
+        } else {
+          isoValue = max(minISO, min(maxISO, maxISO))
+        }
+
         d.setExposureModeCustom(duration: duration, iso: isoValue, completionHandler: nil)
         d.unlockForConfiguration()
         resolve(nil)

@@ -25,8 +25,13 @@ export function useFormatsAndFps(
     const supportsTarget = (f: CameraDeviceFormat, v: number) => {
       const min = f.minFps!;
       const max = f.maxFps!;
-      if (Platform.OS === 'ios' && v === 30) {
-        return min <= 30.5 && max >= 29.5; // tolerate NTSC 29.97 ≈ 30
+      if (Platform.OS === 'ios') {
+        if (v === 30) {
+          return min <= 30.5 && max >= 29.5; // tolerate NTSC 29.97 ≈ 30
+        }
+        if (v === 60) {
+          return min <= 60.5 && max >= 59.0; // tolerate NTSC 59.94 ≈ 60
+        }
       }
       return min <= v && max >= v;
     };
@@ -86,7 +91,7 @@ export function useFormatsAndFps(
   }, [currentFpsRange, fps]);
 
   const cameraFps = useMemo(() => {
-    if (Platform.OS === 'ios' && fps === 30) return undefined;
+    if (Platform.OS === 'ios' && (fps === 30 || fps === 60)) return undefined;
     return effectiveFps;
   }, [fps, effectiveFps]);
 
@@ -101,7 +106,10 @@ export function useFormatsAndFps(
     const targetArea = 1920 * 1080;
     const supportsAt = (f: CameraDeviceFormat, v: number) => {
       if (typeof f.minFps !== 'number' || typeof f.maxFps !== 'number') return false;
-      if (Platform.OS === 'ios' && v === 30) return f.minFps <= 30.5 && f.maxFps >= 29.5;
+      if (Platform.OS === 'ios') {
+        if (v === 30) return f.minFps <= 30.5 && f.maxFps >= 29.5;
+        if (v === 60) return f.minFps <= 60.5 && f.maxFps >= 59.0;
+      }
       return f.minFps <= v && f.maxFps >= v;
     };
     const area = (f: CameraDeviceFormat) => (Number(f.videoWidth) || 0) * (Number(f.videoHeight) || 0);
