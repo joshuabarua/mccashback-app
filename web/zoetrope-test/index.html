@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zoetrope / Tachometer Test</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #0a0a0a;
+        color: #fff;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      }
+      .wrap {
+        min-height: 100%;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+      header, footer { padding: 12px 16px; }
+      header { border-bottom: 1px solid rgba(255,255,255,0.1); }
+      footer { border-top: 1px solid rgba(255,255,255,0.1); font-size: 12px; color: #bbb; }
+
+      .content {
+        display: grid;
+        place-items: center;
+        padding: 20px 16px 32px;
+        gap: 24px;
+      }
+
+      .disc {
+        width: min(80vw, 360px);
+        height: min(80vw, 360px);
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: radial-gradient(circle at center, rgba(255,255,255,0.06), rgba(255,255,255,0.02) 60%, transparent 61%),
+                    conic-gradient(from 0deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06));
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 20px 60px rgba(0,0,0,0.6);
+        overflow: hidden;
+      }
+      .spin {
+        animation-name: spin;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+        animation-duration: 0.075s; /* 800 RPM default => 60/800 ≈ 0.075s */
+        transform-origin: 50% 50%;
+        will-change: transform;
+      }
+      .img-holder {
+        width: 90%;
+        height: 90%;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: repeating-conic-gradient(from 0deg, #111 0deg 10deg, #ddd 10deg 20deg);
+      }
+      img#targetImg {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        image-rendering: auto;
+        mix-blend-mode: normal;
+      }
+
+      .controls {
+        width: min(800px, 92vw);
+        display: grid;
+        gap: 12px;
+      }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+      .row label { color: #eee; }
+      input[type="range"] { width: 320px; }
+      input[type="number"] {
+        width: 100px;
+        padding: 6px 8px;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.06);
+        color: #fff;
+      }
+      .badge {
+        background: rgba(165,212,165,0.18);
+        color: #dff2df;
+        border: 1px solid rgba(165,212,165,0.45);
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0); }
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <strong>Zoetrope / Tachometer Test</strong>
+      </header>
+
+      <main class="content">
+        <div class="disc">
+          <div id="rotor" class="img-holder spin">
+            <img id="targetImg" src="../../assets/images/icon.png" alt="Spinning target" />
+            <canvas id="targetCanvas" width="1000" height="1000" aria-label="Spinning target" style="display:none"></canvas>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="row">
+            <label for="mode">Mode</label>
+            <select id="mode">
+              <option value="image" selected>Image</option>
+              <option value="pattern">Pattern</option>
+            </select>
+            <span class="badge">Use Image mode to test your gallery control</span>
+          </div>
+          <div class="row" id="imageControls">
+            <label for="imageSelect">Image</label>
+            <select id="imageSelect">
+              <option value="../../assets/images/icon.png" selected>assets/images/icon.png</option>
+              <option value="../../assets/images/icon2.png">assets/images/icon2.png</option>
+              <option value="../../assets/images/adaptive-icon.png">assets/images/adaptive-icon.png</option>
+              <option value="../../assets/images/adaptive-icon2.png">assets/images/adaptive-icon2.png</option>
+              <option value="../../assets/images/splash-icon.png">assets/images/splash-icon.png</option>
+              <option value="../../assets/images/favicon.png">assets/images/favicon.png</option>
+            </select>
+            <label for="imageFile">or Upload</label>
+            <input id="imageFile" type="file" accept="image/*" />
+          </div>
+          <div class="row" id="patternControls" style="display:none">
+            <label for="sectors">Sectors</label>
+            <input id="sectors" type="number" min="1" max="120" step="1" value="9" />
+            <span class="badge">frames/rev = <span id="sectorsOut">9</span></span>
+          </div>
+          <div class="row">
+            <label for="rpm">RPM</label>
+            <input id="rpm" type="range" min="0" max="2000" step="1" value="800" />
+            <input id="rpmNum" type="number" min="0" max="2000" step="1" value="800" />
+            <span class="badge"><span id="rpmOut">800</span> rpm</span>
+            <span class="badge"><span id="rpsOut">13.33</span> rps</span>
+            <span class="badge">T = <span id="periodOut">75</span> ms/rev</span>
+          </div>
+          <div class="row">
+            <button id="pauseBtn">Pause</button>
+            <button id="resumeBtn">Resume</button>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        Tip: 800 rpm = 13.33 rps. If your app’s strobe frequency matches, the disc should appear mostly stationary.
+      </footer>
+    </div>
+
+    <script>
+      const rotor = document.getElementById('rotor');
+      const imgEl = document.getElementById('targetImg');
+      const canvas = document.getElementById('targetCanvas');
+      const ctx = canvas.getContext('2d');
+      const rpmRange = document.getElementById('rpm');
+      const rpmNum = document.getElementById('rpmNum');
+      const rpmOut = document.getElementById('rpmOut');
+      const rpsOut = document.getElementById('rpsOut');
+      const periodOut = document.getElementById('periodOut');
+      const pauseBtn = document.getElementById('pauseBtn');
+      const resumeBtn = document.getElementById('resumeBtn');
+      const modeSelect = document.getElementById('mode');
+      const imageSelect = document.getElementById('imageSelect');
+      const imageControls = document.getElementById('imageControls');
+      const patternControls = document.getElementById('patternControls');
+      const sectorsInput = document.getElementById('sectors');
+      const sectorsOut = document.getElementById('sectorsOut');
+      const imageFile = document.getElementById('imageFile');
+
+      function drawPattern(sectors) {
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const r = Math.min(w, h) * 0.48;
+        ctx.clearRect(0, 0, w, h);
+        for (let i = 0; i < sectors; i++) {
+          const start = (i / sectors) * Math.PI * 2;
+          const end = ((i + 1) / sectors) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, start, end);
+          ctx.closePath();
+          ctx.fillStyle = i % 2 === 0 ? '#111' : '#ddd';
+          ctx.fill();
+        }
+        // Central hub
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.05, 0, Math.PI * 2);
+        ctx.fillStyle = '#222';
+        ctx.fill();
+      }
+
+      function applyRpm(rpm) {
+        rpm = Math.max(0, Math.min(2000, Math.round(Number(rpm) || 0)));
+        rpmOut.textContent = rpm;
+        const rps = rpm / 60;
+        rpsOut.textContent = rps.toFixed(2);
+        if (rpm <= 0) {
+          rotor.style.animationPlayState = 'paused';
+          periodOut.textContent = '—';
+          return;
+        }
+        const duration = 60 / rpm; // seconds per revolution
+        periodOut.textContent = Math.round(duration * 1000);
+        rotor.style.animationDuration = duration + 's';
+        rotor.style.animationPlayState = 'running';
+      }
+
+      function syncInputs(val) {
+        rpmRange.value = val;
+        rpmNum.value = val;
+        applyRpm(val);
+      }
+
+      rpmRange.addEventListener('input', (e) => syncInputs(e.target.value));
+      rpmNum.addEventListener('input', (e) => syncInputs(e.target.value));
+
+      pauseBtn.addEventListener('click', () => {
+        rotor.style.animationPlayState = 'paused';
+      });
+      resumeBtn.addEventListener('click', () => {
+        if ((+rpmRange.value) > 0) rotor.style.animationPlayState = 'running';
+      });
+
+      sectorsInput.addEventListener('input', () => {
+        const v = Math.max(1, Math.min(120, Math.round(+sectorsInput.value || 1)));
+        sectorsInput.value = String(v);
+        sectorsOut.textContent = String(v);
+        drawPattern(v);
+      });
+
+      modeSelect.addEventListener('change', () => {
+        const mode = modeSelect.value;
+        const useImage = mode === 'image';
+        imgEl.style.display = useImage ? '' : 'none';
+        canvas.style.display = useImage ? 'none' : '';
+        imageControls.style.display = useImage ? '' : 'none';
+        patternControls.style.display = useImage ? 'none' : '';
+        rotor.style.background = useImage
+          ? 'transparent'
+          : 'repeating-conic-gradient(from 0deg, #111 0deg 10deg, #ddd 10deg 20deg)';
+        if (!useImage) {
+          drawPattern(+sectorsInput.value || 9);
+        }
+      });
+
+      imageSelect.addEventListener('change', () => {
+        imgEl.src = imageSelect.value;
+      });
+
+      imageFile.addEventListener('change', () => {
+        const file = imageFile.files && imageFile.files[0];
+        if (file) {
+          const url = URL.createObjectURL(file);
+          imgEl.src = url;
+          modeSelect.value = 'image';
+          imgEl.style.display = '';
+          canvas.style.display = 'none';
+          imageControls.style.display = '';
+          patternControls.style.display = 'none';
+          rotor.style.background = 'transparent';
+        }
+      });
+
+      // Initialize
+      // Default to Image mode with your gallery control asset. Switch to Pattern if needed.
+      imgEl.src = imageSelect.value;
+      rotor.style.background = 'transparent';
+      drawPattern(+sectorsInput.value || 9);
+      applyRpm(800);
+    </script>
+  </body>
+</html>

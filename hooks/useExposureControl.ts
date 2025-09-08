@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import Exposure, { type ExposureCapabilities } from '../native/Exposure';
 
-export type PendingZoetrope = { type: 'set' | 'auto'; ns?: number };
+export type PendingZoetrope = { type: 'set'; ns: number };
 
 export type UseExposureControlParams = {
   cameraInitialized: boolean;
@@ -30,7 +30,6 @@ export function useExposureControl({
   const [supportsManual, setSupportsManual] = useState<boolean>(false);
   const [caps, setCaps] = useState<ExposureCapabilities | null>(null);
 
-  // Query exposure capabilities only after camera is initialized
   useEffect(() => {
     if (!cameraInitialized) return;
     let mounted = true;
@@ -50,16 +49,15 @@ export function useExposureControl({
     };
   }, [cameraInitialized]);
 
-  // While Zoetrope is enabled, keep shutter at the shortest supported exposure
   useEffect(() => {
     if (!zoetropeEnabled || !supportsManual) return;
     const targetFps = effectiveFps || fps || 30;
-    const fallback = Math.round(1e9 / (4 * targetFps));
-    const desired = caps?.minExposureNs ?? fallback;
+    // Default to a stable 180° shutter (brighter than min exposure, avoids dark image)
+    const desired = Math.round(1e9 / (2 * targetFps));
     const minNs = caps?.minExposureNs ?? desired;
     const maxNs = caps?.maxExposureNs ?? desired;
     const clamped = Math.max(minNs, Math.min(maxNs, desired));
-    const tol = 1e6; // 1ms tolerance
+    const tol = 1e6;
     const needsUpdate = currentShutterNs == null || Math.abs(currentShutterNs - clamped) > tol || exposureMode !== 'manual';
     if (!needsUpdate) return;
     if (cameraReadyRef.current && !isConfiguring) {
@@ -83,25 +81,25 @@ export function useExposureControl({
 
   const handleSliderCompleteNs = useCallback(async (ns: number) => {
     try {
-      await Exposure.setManualExposure(ns);
+      await Exposure.setManualExposure(ns, caps?.maxIso);
       setCurrentShutterNs(ns);
       setExposureMode('manual');
     } catch {
       showToast('Shutter not supported');
     }
-  }, [showToast]);
+  }, [showToast, caps]);
 
   const setPreset180 = useCallback(async () => {
     const fpsForShutter = effectiveFps || fps || 30;
     const ns = Math.round(1e9 / (2 * fpsForShutter));
     try {
-      await Exposure.setManualExposure(ns);
+      await Exposure.setManualExposure(ns, caps?.maxIso);
       setCurrentShutterNs(ns);
       setExposureMode('manual');
     } catch {
       showToast('Shutter not supported');
     }
-  }, [effectiveFps, fps, showToast]);
+  }, [effectiveFps, fps, showToast, caps]);
 
   return {
     exposureMode,

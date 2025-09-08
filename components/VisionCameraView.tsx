@@ -13,6 +13,7 @@ export type VisionCameraViewProps = {
   selectedFormat: CameraDeviceFormat | undefined;
   onInitialized: () => void;
   frameProcessor?: any;
+  torch?: 'on' | 'off';
 };
 
 export default function VisionCameraView({
@@ -25,6 +26,7 @@ export default function VisionCameraView({
   selectedFormat,
   onInitialized,
   frameProcessor,
+  torch = 'off',
 }: VisionCameraViewProps) {
   if (remounting) return <View style={styles.camera} />;
   return (
@@ -34,7 +36,7 @@ export default function VisionCameraView({
       style={styles.camera}
       device={device}
       isActive={isActive}
-      torch="off"
+      torch={torch}
       video
       fps={cameraFps}
       format={selectedFormat}

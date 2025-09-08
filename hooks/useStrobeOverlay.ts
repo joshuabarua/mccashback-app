@@ -4,7 +4,7 @@ import { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, 
 export type UseStrobeOverlayParams = {
   enabled: boolean;
   strobeHz: number;
-  maxDisplayHz?: number; // safety cap (default 15 Hz)
+  maxDisplayHz?: number;
 };
 
 export function useStrobeOverlay({ enabled, strobeHz, maxDisplayHz = 15 }: UseStrobeOverlayParams) {
@@ -39,4 +39,3 @@ export function useStrobeOverlay({ enabled, strobeHz, maxDisplayHz = 15 }: UseSt
   return { strobeStyle };
 }
 
-// StrobeOverlay component moved to components/StrobeOverlay.tsx to keep this file JSX-free

@@ -14,6 +14,17 @@ export type ZoetropePanelProps = {
   enableStrobeOverlay: boolean;
   visualStrobeEnabled: boolean;
   setVisualStrobeEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  torchStrobeEnabled: boolean;
+  setTorchStrobeEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  framesPerRev: number;
+  setFramesPerRev: React.Dispatch<React.SetStateAction<number>>;
+  harmonic: number;
+  setHarmonic: React.Dispatch<React.SetStateAction<number>>;
+  imuTachEnabled: boolean;
+  setImuTachEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  imuRpmRounded?: number;
+  onMarkPass: () => void;
+  manualRpmRounded?: number;
 };
 
 export default function ZoetropePanel(props: ZoetropePanelProps) {
@@ -28,21 +39,79 @@ export default function ZoetropePanel(props: ZoetropePanelProps) {
     enableStrobeOverlay,
     visualStrobeEnabled,
     setVisualStrobeEnabled,
+    torchStrobeEnabled,
+    setTorchStrobeEnabled,
+    framesPerRev,
+    setFramesPerRev,
+    harmonic,
+    setHarmonic,
+    imuTachEnabled,
+    setImuTachEnabled,
+    imuRpmRounded,
+    onMarkPass,
+    manualRpmRounded,
   } = props;
 
   const formattedTick = () => formatPresetTick(targetRpm, rpmPresets, snapWindow);
 
+  const fprOptions = [6, 8, 9, 10, 12, 16, 24];
+  const nextFrom = (arr: number[], cur: number) => {
+    const idx = arr.indexOf(cur);
+    const next = idx >= 0 ? arr[(idx + 1) % arr.length] : arr[0];
+    return next;
+  };
+
   return (
     <View style={[styles.shutterPanel, { bottom }]}> 
-      <View style={[styles.shutterRow, { marginTop: 10 }]}> 
+      {/* Controls row: wraps on small screens */}
+      <View style={[styles.shutterRow, { marginTop: 10, gap: 8, flexWrap: 'wrap' }]}> 
+        <TouchableOpacity
+          style={[styles.shutterButton, { backgroundColor: imuTachEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
+          onPress={() => setImuTachEnabled((p) => !p)}
+        >
+          <Text style={styles.shutterButtonText}>{imuTachEnabled ? 'IMU Tach: On' : 'IMU Tach: Off'}</Text>
+        </TouchableOpacity>
+        {!!imuTachEnabled && (
+          <Text style={[styles.shutterTick, { width: undefined }]}>{`~${imuRpmRounded ?? 0} RPM`}</Text>
+        )}
         {enableStrobeOverlay && (
           <TouchableOpacity
-            style={[styles.shutterButton, { marginRight: 8, backgroundColor: visualStrobeEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
+            style={[styles.shutterButton, { backgroundColor: visualStrobeEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
             onPress={() => setVisualStrobeEnabled((p) => !p)}
           >
             <Text style={styles.shutterButtonText}>{visualStrobeEnabled ? 'Flash UI: On' : 'Flash UI: Off'}</Text>
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={[styles.shutterButton, { backgroundColor: torchStrobeEnabled ? 'rgba(165,212,165,0.35)' : 'rgba(255,255,255,0.15)' }]}
+          onPress={() => setTorchStrobeEnabled((p) => !p)}
+        >
+          <Text style={styles.shutterButtonText}>{torchStrobeEnabled ? 'Torch Strobe: On' : 'Torch Strobe: Off'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.shutterButton, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+          onPress={onMarkPass}
+        >
+          <Text style={styles.shutterButtonText}>Mark Pass</Text>
+        </TouchableOpacity>
+        {!!manualRpmRounded && (
+          <Text style={[styles.shutterTick, { width: undefined }]}>{`~${manualRpmRounded} RPM`}</Text>
+        )}
+        <TouchableOpacity
+          style={[styles.shutterButton, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+          onPress={() => setFramesPerRev((cur) => nextFrom(fprOptions, cur))}
+        >
+          <Text style={styles.shutterButtonText}>{`FPR: ${framesPerRev}`}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.shutterButton, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
+          onPress={() => setHarmonic((cur) => (cur >= 8 ? 1 : cur + 1))}
+        >
+          <Text style={styles.shutterButtonText}>{`m: ${harmonic}`}</Text>
+        </TouchableOpacity>
+      </View>
+      {/* Slider row: full width */}
+      <View style={[styles.shutterRow, { marginTop: 8, alignItems: 'center' }]}> 
         <Text style={styles.shutterTick}>RPM</Text>
         <Slider
           value={targetRpm}
@@ -62,7 +131,7 @@ export default function ZoetropePanel(props: ZoetropePanelProps) {
           minimumTrackTintColor="#a5d4a5"
           maximumTrackTintColor="rgba(255,255,255,0.3)"
           thumbTintColor="#a5d4a5"
-          style={{ flex: 1, marginHorizontal: 12 }}
+          style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, marginHorizontal: 8 }}
         />
         <Text style={styles.shutterTick}>{formattedTick()}</Text>
       </View>
@@ -97,5 +166,7 @@ const styles = StyleSheet.create({
   shutterTick: {
     color: 'white',
     fontVariant: ['tabular-nums'],
+    width: 60,
+    textAlign: 'center',
   },
 });
