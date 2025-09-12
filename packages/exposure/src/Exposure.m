@@ -14,4 +14,12 @@ RCT_EXTERN_METHOD(setManualExposure:(nonnull NSNumber *)exposureNs
 RCT_EXTERN_METHOD(enableAutoExposure:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(setTargetFps:(nonnull NSNumber *)targetFps
+                  preferLowResolution:(nullable NSNumber *)preferLowResolution
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(resetFrameRate:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

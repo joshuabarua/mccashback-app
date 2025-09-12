@@ -103,4 +103,86 @@ class Exposure: NSObject {
       }
     }
   }
+
+  @objc(setTargetFps:preferLowResolution:resolver:rejecter:)
+  func setTargetFps(_ targetFps: NSNumber,
+                    preferLowResolution: NSNumber?,
+                    resolver resolve: @escaping RCTPromiseResolveBlock,
+                    rejecter reject: @escaping RCTPromiseRejectBlock) {
+    DispatchQueue.main.async {
+      guard let d = self.device else { reject("device_unavailable", "Camera device unavailable", nil); return }
+      let fps = Double(truncating: targetFps)
+      let preferLow = (preferLowResolution?.boolValue ?? true)
+      do {
+        try d.lockForConfiguration()
+
+        // Find formats that support the target fps
+        let candidates: [AVCaptureDevice.Format] = d.formats.filter { format in
+          for range in format.videoSupportedFrameRateRanges {
+            if fps >= Double(range.minFrameRate) - 0.001 && fps <= Double(range.maxFrameRate) + 0.001 {
+              return true
+            }
+          }
+          return false
+        }
+
+        func area(_ f: AVCaptureDevice.Format) -> Int {
+          let dims = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+          return Int(dims.width) * Int(dims.height)
+        }
+
+        let chosen: AVCaptureDevice.Format? = {
+          if candidates.isEmpty { return nil }
+          if preferLow {
+            return candidates.sorted { area($0) < area($1) }.first
+          } else {
+            return candidates.sorted { area($0) > area($1) }.first
+          }
+        }()
+
+        if let fmt = chosen {
+          d.activeFormat = fmt
+        }
+
+        // Apply exact frame durations for requested fps
+        if fps > 0 {
+          let duration = CMTimeMakeWithSeconds(1.0 / fps, preferredTimescale: 1_000_000_000)
+          d.activeVideoMinFrameDuration = duration
+          d.activeVideoMaxFrameDuration = duration
+        }
+
+        // Read back the applied fps and format info
+        let dims = CMVideoFormatDescriptionGetDimensions(d.activeFormat.formatDescription)
+        let appliedMin = CMTimeGetSeconds(d.activeVideoMinFrameDuration)
+        let appliedFps = appliedMin > 0 ? (1.0 / appliedMin) : 0
+
+        d.unlockForConfiguration()
+
+        resolve([
+          "appliedFps": NSNumber(value: appliedFps),
+          "width": NSNumber(value: Int(dims.width)),
+          "height": NSNumber(value: Int(dims.height))
+        ])
+      } catch let error as NSError {
+        reject("lowfps_config_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(resetFrameRate:rejecter:)
+  func resetFrameRate(_ resolve: @escaping RCTPromiseResolveBlock,
+                      rejecter reject: @escaping RCTPromiseRejectBlock) {
+    DispatchQueue.main.async {
+      guard let d = self.device else { resolve(nil); return }
+      do {
+        try d.lockForConfiguration()
+        d.activeVideoMinFrameDuration = CMTime.invalid
+        d.activeVideoMaxFrameDuration = CMTime.invalid
+        d.unlockForConfiguration()
+        resolve(nil)
+      } catch let error as NSError {
+        reject("lowfps_reset_failed", error.localizedDescription, error)
+      }
+    }
+  }
 }

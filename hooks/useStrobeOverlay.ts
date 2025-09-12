@@ -5,14 +5,17 @@ export type UseStrobeOverlayParams = {
   enabled: boolean;
   strobeHz: number;
   maxDisplayHz?: number;
+  dutyCycle?: number; // fraction [0..1] of each cycle that preview is visible
 };
 
-export function useStrobeOverlay({ enabled, strobeHz, maxDisplayHz = 15 }: UseStrobeOverlayParams) {
+export function useStrobeOverlay({ enabled, strobeHz, maxDisplayHz = 15, dutyCycle = 0.15 }: UseStrobeOverlayParams) {
   const strobePhase = useSharedValue(0);
 
   const strobeStyle = useAnimatedStyle(() => {
     const phase = strobePhase.value % 1;
-    const opacity = phase < 0.5 ? 0.9 : 0;
+    // Black overlay fully opaque except during a short visible window each cycle
+    const onWindow = Math.max(0.02, Math.min(0.95, dutyCycle));
+    const opacity = phase < onWindow ? 0 : 1;
     return { opacity } as const;
   });
 
@@ -28,13 +31,13 @@ export function useStrobeOverlay({ enabled, strobeHz, maxDisplayHz = 15 }: UseSt
       strobePhase.value = 0;
       return;
     }
-    const periodMs = Math.max(5, Math.round(1000 / f));
+    const periodMs = Math.max(2, Math.round(1000 / f));
     strobePhase.value = 0;
     strobePhase.value = withRepeat(withTiming(1, { duration: periodMs, easing: Easing.linear }), -1, false);
     return () => {
       cancelAnimation(strobePhase);
     };
-  }, [enabled, strobeHz, maxDisplayHz, strobePhase]);
+  }, [enabled, strobeHz, maxDisplayHz, dutyCycle, strobePhase]);
 
   return { strobeStyle };
 }

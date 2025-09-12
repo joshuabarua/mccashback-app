@@ -15,6 +15,8 @@ export function useFormatsAndFps(
   device: CameraDevice | undefined,
   fps: number,
   setFps: (v: number) => void,
+  qualityFirst: boolean = false,
+  extended: boolean = false,
 ): FormatsAndFps {
   const selectedFormat = useMemo(() => {
     if (!device) return undefined;
@@ -26,6 +28,10 @@ export function useFormatsAndFps(
       const min = f.minFps!;
       const max = f.maxFps!;
       if (Platform.OS === 'ios') {
+        if (v === 24) {
+          // tolerate cinema 23.976 ≈ 24
+          return min <= 24.5 && max >= 23.5;
+        }
         if (v === 30) {
           return min <= 30.5 && max >= 29.5; // tolerate NTSC 29.97 ≈ 30
         }
@@ -41,6 +47,10 @@ export function useFormatsAndFps(
       if (nonHfr.length) candidates = nonHfr;
     }
     if (candidates.length > 0) {
+      if (qualityFirst) {
+        // Prefer the highest resolution format that supports the target fps
+        return candidates.sort((a, b) => area(b) - area(a))[0];
+      }
       const aboveOrEqual = candidates.filter((f) => area(f) >= targetArea).sort((a, b) => area(a) - area(b));
       if (aboveOrEqual.length) return aboveOrEqual[0];
       return candidates.sort((a, b) => area(b) - area(a))[0];
@@ -58,7 +68,7 @@ export function useFormatsAndFps(
       }
     }
     return best;
-  }, [device, fps]);
+  }, [device, fps, qualityFirst]);
 
   const deviceFpsRange = useMemo(() => {
     if (!device) return { min: 15, max: 60 };
@@ -91,36 +101,34 @@ export function useFormatsAndFps(
   }, [currentFpsRange, fps]);
 
   const cameraFps = useMemo(() => {
-    if (Platform.OS === 'ios' && (fps === 30 || fps === 60)) return undefined;
+    // On iOS, for 24/30/60 allow AVFoundation to pick the closest stable rate (23.976/29.97/59.94)
+    if (Platform.OS === 'ios' && (fps === 24 || fps === 30 || fps === 60)) return undefined;
     return effectiveFps;
   }, [fps, effectiveFps]);
 
   const supportedFpsOptions = useMemo(() => {
-    if (!device) return [30];
-    const formats: CameraDeviceFormat[] = device.formats ?? [];
-    const candidateSet = new Set<number>([24, 30, 60, 120, 240]);
-    for (const f of formats) {
-      if (typeof f.minFps === 'number') candidateSet.add(Math.round(f.minFps));
-      if (typeof f.maxFps === 'number') candidateSet.add(Math.round(f.maxFps));
-    }
-    const targetArea = 1920 * 1080;
-    const supportsAt = (f: CameraDeviceFormat, v: number) => {
-      if (typeof f.minFps !== 'number' || typeof f.maxFps !== 'number') return false;
-      if (Platform.OS === 'ios') {
-        if (v === 30) return f.minFps <= 30.5 && f.maxFps >= 29.5;
-        if (v === 60) return f.minFps <= 60.5 && f.maxFps >= 59.0;
+    // Limit options to the currently selected format to avoid frequent format swaps
+    if (!selectedFormat) return [fps];
+    const f = selectedFormat;
+    const min = Math.max(1, Math.ceil(f.minFps ?? 1));
+    const max = Math.max(min, Math.floor(f.maxFps ?? 60));
+    if (Platform.OS === 'ios') {
+      if (extended) {
+        // Expose dense integer rates when extended mode is on (allows down to device min e.g. 1 fps)
+        const values: number[] = [];
+        for (let v = min; v <= max; v++) values.push(v);
+        return values.length ? values : [Math.min(30, max)];
       }
-      return f.minFps <= v && f.maxFps >= v;
-    };
-    const area = (f: CameraDeviceFormat) => (Number(f.videoWidth) || 0) * (Number(f.videoHeight) || 0);
-    const supported = Array.from(candidateSet)
-      .filter((v) => formats.some((f) => supportsAt(f, v)));
-    const highQuality = supported.filter((v) => formats.some((f) => supportsAt(f, v) && area(f) >= targetArea));
-    const values = (highQuality.length ? highQuality : supported)
-      .sort((a, b) => a - b)
-      .filter((v) => v !== 1 && (Platform.OS !== 'ios' || v !== 24));
+      // Use a conservative set of stable rates to reduce AVFoundation errors
+      const safe = [16, 24, 25, 30, 50, 60, 120, 240];
+      const within = safe.filter((v) => v >= min && v <= max);
+      return within.length ? within : [Math.min(30, max)];
+    }
+    // Android: expose dense integers within the current format
+    const values: number[] = [];
+    for (let v = min; v <= max; v++) values.push(v);
     return values.length ? values : [30];
-  }, [device]);
+  }, [selectedFormat, fps, extended]);
 
   // Ensure current fps is always a supported option
   useEffect(() => {

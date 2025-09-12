@@ -1,31 +1,13 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { NativeModules, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS as runOnJSReanimated } from 'react-native-reanimated';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Camera } from 'react-native-vision-camera';
-import { useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { useCameraDevice, useCameraPermission, type Camera, type CameraDeviceFormat } from 'react-native-vision-camera';
 import BackButton from '../components/BackButton';
-import FocusOverlay from '../components/FocusOverlay';
-import ShutterPanel from '../components/ShutterPanel';
-import StrobeOverlay from '../components/StrobeOverlay';
-import ToastOverlay from '../components/Toast';
 import VisionCameraView from '../components/VisionCameraView';
-import ZoetropePanel from '../components/ZoetropePanel';
-import { RPM_MAX, RPM_MIN, SNAP_WINDOW } from '../constants/Zoetrope';
-import { useExposureControl } from '../hooks/useExposureControl';
 import { useFormatsAndFps } from '../hooks/useFormatsAndFps';
-import { useReconfiguration } from '../hooks/useReconfiguration';
-import { formatShutterLabel, useShutterMath } from '../hooks/useShutterMath';
 import Exposure from '../native/Exposure';
-import { rpmToStrobeHz } from '../utils/zoetrope';
-import { useImuTachometer } from '../hooks/useImuTachometer';
-
-interface Point {
-  x: number;
-  y: number;
-}
 
 export default function VisionCameraScreen() {
   const router = useRouter();
@@ -33,228 +15,176 @@ export default function VisionCameraScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
   const insets = useSafeAreaInsets();
-  
+
+  // Strobe method state
   const [isActive, setIsActive] = useState(true);
-  const [fps, setFps] = useState(30);
-  const [focusPoint, setFocusPoint] = useState<Point | null>(null);
-  const [isConfiguring, setIsConfiguring] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cameraReadyRef = useRef(false);
-  const prevFpsRef = useRef(fps);
-  const [remounting, setRemounting] = useState(false);
-  const [cameraInitialized, setCameraInitialized] = useState(false);
-  const pendingZoetropeRef = useRef<null | { type: 'set'; ns: number }>(null);
+  const [requestedHz, setRequestedHz] = useState(24);
+  const [appliedHz, setAppliedHz] = useState(24);
+  const [torch, setTorch] = useState<'on' | 'off'>('off');
+  const [lowFpsNative, setLowFpsNative] = useState(false);
+  const [nativeFormat, setNativeFormat] = useState<CameraDeviceFormat | undefined>(undefined);
+  const [nativeApplied, setNativeApplied] = useState<{ appliedFps: number; width: number; height: number } | undefined>(undefined);
+  const lowFpsAvailable = useMemo(() => Exposure.isLowFpsAvailable?.() ?? false, []);
+  const [fineOffset, setFineOffset] = useState(0); // Hz detune for slow drift (native-only)
+  const [driftMode, setDriftMode] = useState(false); // Software drift around target when native not linked
+  const [safeModeIOS, setSafeModeIOS] = useState(true); // Avoid explicit fps on iOS to reduce AVFoundation errors
 
-  const showToast = useCallback((message: string) => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToast(message);
-    toastTimeoutRef.current = setTimeout(() => {
-      setToast(null);
-    }, 1500);
-  }, []);
+  // Pick a camera format that supports the requested FPS (requestedHz)
+  // Always use extended options so the slider can reach lower Hz like the previous +/- buttons.
+  const { selectedFormat, effectiveFps, cameraFps, supportedFpsOptions } = useFormatsAndFps(device, requestedHz, setAppliedHz, false, true);
 
-  useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    };
-  }, []);
-  
-  
-  const { selectedFormat, effectiveFps, cameraFps } = useFormatsAndFps(device, fps, setFps);
+  // Lock a format to reduce reconfiguration churn on iOS
+  const [lockedFormat, setLockedFormat] = useState<CameraDeviceFormat | undefined>(undefined);
 
-  const cameraKey = useMemo(() => {
-    const base = `${selectedFormat?.videoWidth}x${selectedFormat?.videoHeight}-${selectedFormat?.minFps}-${selectedFormat?.maxFps}`;
-    const fpsPart = cameraFps == null ? 'auto' : String(cameraFps);
-    return `${base}-${fpsPart}`;
-  }, [selectedFormat, cameraFps]);
-
-  
-  useReconfiguration({
-    device,
-    fps,
-    selectedFormat,
-    prevFpsRef,
-    setIsConfiguring,
-    setRemounting,
-    setIsActive,
-    cameraReadyRef,
-  });
-
-  
-  const [showShutterPanel, setShowShutterPanel] = useState(false);
-  const rpmPresets = useMemo(() => [300, 600, 700, 800, 900] as const, []);
-  const [framesPerRev, setFramesPerRev] = useState<number>(1);
-  const [harmonic, setHarmonic] = useState<number>(1);
-  const enableStrobeOverlay = false;
-  const [visualStrobeEnabled, setVisualStrobeEnabled] = useState(false);
-  const [targetRpm, setTargetRpm] = useState<number>(350);
-  const [torchStrobeEnabled, setTorchStrobeEnabled] = useState<boolean>(false);
-  const [torchState, setTorchState] = useState<'on' | 'off'>('on');
-  const [imuTachEnabled, setImuTachEnabled] = useState<boolean>(false);
-  const [manualRpmRounded, setManualRpmRounded] = useState<number>(0);
-  const manualBufRef = useRef<number[]>([]);
-  const lastMarkTimeRef = useRef<number | null>(null);
-  const hasRNCAsyncStorage = useMemo(() => {
-    if (Platform.OS === 'web') return false;
-    const mods = NativeModules ?? {};
-    const keys = Object.keys(mods);
-    return keys.some((k) => k.toLowerCase().includes('asyncstorage'));
-  }, []);
-  useEffect(() => {
-    if (!hasRNCAsyncStorage) return;
-    (async () => {
-      try {
-        const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
-        const v = await AsyncStorage.getItem('targetRpm');
-        if (v) {
-          const n = Math.max(RPM_MIN, Math.min(RPM_MAX, parseInt(v, 10) || 300));
-          setTargetRpm(n);
-        }
-      } catch {}
-    })();
-  }, [hasRNCAsyncStorage]);
-  useEffect(() => {
-    if (!hasRNCAsyncStorage) return;
-    (async () => {
-      try {
-        const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
-        await AsyncStorage.setItem('targetRpm', String(targetRpm));
-      } catch {}
-    })();
-  }, [targetRpm, hasRNCAsyncStorage]);
-
-  const {
-    exposureMode,
-    setExposureMode,
-    currentShutterNs,
-    setCurrentShutterNs,
-    supportsManual,
-    caps,
-    handleSliderChangeNs,
-    handleSliderCompleteNs,
-    setPreset180,
-  } = useExposureControl({
-    cameraInitialized,
-    effectiveFps,
-    fps,
-    zoetropeEnabled: true,
-    isConfiguring,
-    cameraReadyRef,
-    pendingZoetropeRef,
-    showToast,
-  });
-
-  const shutterLabel = useMemo(() => formatShutterLabel(exposureMode, currentShutterNs), [exposureMode, currentShutterNs]);
-
-  const { minSeconds, maxSeconds, sliderValueFromNs, nsFromSliderValue } = useShutterMath(effectiveFps, fps);
-  const strobeHz = useMemo(() => rpmToStrobeHz(targetRpm, framesPerRev, harmonic), [targetRpm, framesPerRev, harmonic]);
-
-  // IMU-based tachometer (non-strobing)
-  const { rounded: imuRpmRounded, available: imuAvailable } = useImuTachometer({ enabled: imuTachEnabled, windowSize: 16, updateIntervalMs: 16 });
-
-  const { torchHz, harmonicUsed } = useMemo(() => {
-    if (!torchStrobeEnabled || !isActive || !Number.isFinite(strobeHz) || strobeHz <= 0) {
-      return { torchHz: 0, harmonicUsed: 1 } as const;
+  const iosSupportsRate = useCallback((f: CameraDeviceFormat | undefined, v: number) => {
+    if (!f) return false;
+    const min = (f.minFps ?? 0);
+    const max = (f.maxFps ?? 0);
+    if (Platform.OS === 'ios') {
+      if (v === 24) return min <= 24.5 && max >= 23.5;
+      if (v === 30) return min <= 30.5 && max >= 29.5;
+      if (v === 60) return min <= 60.5 && max >= 59.0;
     }
-    const maxTorchHz = 15;
-    const divisor = Math.max(1, Math.ceil(strobeHz / maxTorchHz));
-    return { torchHz: strobeHz / divisor, harmonicUsed: divisor } as const;
-  }, [torchStrobeEnabled, isActive, strobeHz]);
+    return min <= v && max >= v;
+  }, []);
 
-  const onMarkPass = useCallback(() => {
-    const now = Date.now();
-    const prev = lastMarkTimeRef.current;
-    lastMarkTimeRef.current = now;
-    if (prev == null) return;
-    const dt = (now - prev) / 1000; // seconds
-    if (dt <= 0) return;
-    // If user taps on each visible mark pass, scale by framesPerRev
-    const rpm = (60 / dt) / Math.max(1, framesPerRev);
-    const buf = manualBufRef.current;
-    buf.push(rpm);
-    const maxN = 6;
-    if (buf.length > maxN) buf.shift();
-    const mean = buf.reduce((a, b) => a + b, 0) / buf.length;
-    setManualRpmRounded(Math.round(mean));
-  }, [framesPerRev]);
-
-  // Drive the device torch in a strobing pattern at a display-safe harmonic of the desired strobe frequency
+  // Initialize or update locked format only when needed
   useEffect(() => {
-    // Keep torch on if strobing is disabled or torchHz invalid
-    if (!device || torchHz <= 0) {
-      setTorchState('on');
+    if (!device) return;
+    if (lockedFormat == null) {
+      setLockedFormat(selectedFormat);
       return;
     }
-    const toggleMs = Math.max(10, Math.round(1000 / (torchHz * 2))); // half-period per toggle
-    let on = true;
-    setTorchState(on ? 'on' : 'off');
-    const id = setInterval(() => {
-      on = !on;
-      setTorchState(on ? 'on' : 'off');
-    }, toggleMs);
-    return () => {
-      clearInterval(id);
-      // Ensure we leave the torch on for illumination when stopping strobe
-      setTorchState('on');
-    };
-  }, [device, torchHz]);
-
-  useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
+    if (iosSupportsRate(lockedFormat, requestedHz)) return;
+    // Find a new format that supports the appliedHz, prefer closest area to current locked
+    const area = (f: CameraDeviceFormat) => (Number(f.videoWidth) || 0) * (Number(f.videoHeight) || 0);
+    const lockedArea = lockedFormat ? area(lockedFormat) : 0;
+    const candidates = (device.formats ?? []).filter((f) => iosSupportsRate(f, requestedHz));
+    if (candidates.length) {
+      const next = candidates.sort((a, b) => Math.abs(area(a) - lockedArea) - Math.abs(area(b) - lockedArea))[0];
+      setLockedFormat(next);
     }
+  }, [device, selectedFormat, requestedHz, lockedFormat, iosSupportsRate]);
+
+
+  const cameraKey = useMemo(() => {
+    // Include native low-FPS format in key to ensure Camera remounts when switching
+    const fmt = lowFpsNative && nativeFormat ? nativeFormat : (lockedFormat ?? selectedFormat);
+    const base = `${fmt?.videoWidth}x${fmt?.videoHeight}-${fmt?.minFps}-${fmt?.maxFps}`;
+    const fpsPart = (lowFpsNative || cameraFps == null) ? 'auto' : String(cameraFps);
+    return `${base}-${fpsPart}-${lowFpsNative ? 'native' : 'std'}`;
+  }, [lockedFormat, selectedFormat, cameraFps, lowFpsNative, nativeFormat]);
+
+  // When native low-FPS is OFF, let VisionCamera apply fps (including low values like 5/6);
+  // when ON, avoid passing fps to prevent conflicts; when iOS Safe mode is ON, also avoid explicit fps.
+  const cameraFpsProp = useMemo(() => {
+    if (Platform.OS === 'ios' && safeModeIOS) return undefined;
+    return lowFpsNative ? undefined : cameraFps;
+  }, [cameraFps, lowFpsNative, safeModeIOS]);
+
+  // Ensure camera permission
+  useEffect(() => {
+    if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  const focus = useCallback((point: Point) => {
-    const camera = cameraRef.current;
-    if (camera == null) return;
-    
-    try {
-      camera.focus(point);
-      setFocusPoint(point);
-      showToast('Manual focus set');
-      setTimeout(() => {
-        setFocusPoint(null);
-      }, 2000);
-    } catch (error) {
-      if (__DEV__) console.log('Focus failed:', error);
-    }
-  }, [showToast]);
+  // Apply native low-FPS configuration when enabled (includes fine detune)
+  useEffect(() => {
+    if (!lowFpsNative || !device || !lowFpsAvailable) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const target = Math.max(1, appliedHz + fineOffset);
+        const res = await Exposure.setTargetFps(target, true);
+        if (cancelled) return;
+        setNativeApplied(res);
+        // find a matching VisionCamera format by width/height
+        const match = (device.formats ?? []).find((f) => f.videoWidth === res.width && f.videoHeight === res.height);
+        setNativeFormat(match ?? undefined);
+      } catch (e) {
+        console.error('Low-FPS native configuration failed', e);
+      }
+    })();
+    return () => { cancelled = true };
+  }, [lowFpsNative, appliedHz, fineOffset, device, lowFpsAvailable]);
 
-  const tapGesture = Gesture.Tap()
-    .onEnd(({ x, y }) => {
-      runOnJSReanimated(focus)({ x, y });
-    });
+  // Reset native low-FPS configuration when disabled
+  useEffect(() => {
+    if (lowFpsNative || !lowFpsAvailable) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await Exposure.resetFrameRate();
+        if (cancelled) return;
+        setNativeApplied(undefined);
+        setNativeFormat(undefined);
+      } catch (e) {
+        console.warn('Low-FPS native reset failed', e);
+      }
+    })();
+    return () => { cancelled = true };
+  }, [lowFpsNative, lowFpsAvailable]);
 
   const handleBack = () => {
     setIsActive(false);
     router.back();
   };
 
-  useEffect(() => {
-    if (!selectedFormat) return;
-    if (__DEV__) console.log('Selected format change:', {
-      w: selectedFormat.videoWidth,
-      h: selectedFormat.videoHeight,
-      min: selectedFormat.minFps,
-      max: selectedFormat.maxFps,
-      targetFps: fps,
-      cameraFps,
-    });
-  }, [selectedFormat, fps, cameraFps]);
-  useEffect(() => {
-    if (!device) return;
-    const formats = (device.formats ?? []).map((f) => ({
-      w: f.videoWidth,
-      h: f.videoHeight,
-      min: f.minFps,
-      max: f.maxFps,
-    }));
-    formats.sort((a, b) => (b.max ?? 0) - (a.max ?? 0));
-    if (__DEV__) console.log('Device formats (sorted by max fps):', formats);
-  }, [device]);
+  // Build slider stops from the actual format used by Camera (ensures every stop is supported by that format)
+  const formatForStops = useMemo(() => (lowFpsNative ? (nativeFormat ?? lockedFormat ?? selectedFormat) : (lockedFormat ?? selectedFormat)), [lowFpsNative, nativeFormat, lockedFormat, selectedFormat]);
+  const sliderOptions = useMemo(() => {
+    const f = formatForStops as CameraDeviceFormat | undefined;
+    if (f && typeof f.minFps === 'number' && typeof f.maxFps === 'number') {
+      const min = Math.max(1, Math.ceil(f.minFps as number));
+      const max = Math.max(min, Math.floor(f.maxFps as number));
+      const arr: number[] = [];
+      for (let v = min; v <= max; v++) arr.push(v);
+      return arr;
+    }
+    const list = (supportedFpsOptions || []).slice().sort((a, b) => a - b);
+    return list.length ? list : [requestedHz];
+  }, [formatForStops, supportedFpsOptions, requestedHz]);
+  const sliderIndex = useMemo(() => {
+    if (!sliderOptions.length) return 0;
+    const idx = sliderOptions.reduce((bestIdx, val, idx) => {
+      return Math.abs(val - requestedHz) < Math.abs(sliderOptions[bestIdx] - requestedHz) ? idx : bestIdx;
+    }, 0);
+    return idx;
+  }, [sliderOptions, requestedHz]);
 
+  const rpm = useMemo(() => {
+    const hzVal = Number.isFinite(effectiveFps) ? effectiveFps : appliedHz;
+    return hzVal * 60; // divisor fixed to 1
+  }, [effectiveFps, appliedHz]);
+
+  // Debounce applying requestedHz to the camera (snap to nearest supported option from the active Camera format)
+  useEffect(() => {
+    if (driftMode && !lowFpsNative) return; // drift loop controls appliedHz
+    const t = setTimeout(() => {
+      const options = (sliderOptions && sliderOptions.length) ? sliderOptions : [requestedHz];
+      const nearest = options.reduce((p, c) => (Math.abs(c - requestedHz) < Math.abs(p - requestedHz) ? c : p), options[0]);
+      if (nearest !== appliedHz) setAppliedHz(nearest);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [requestedHz, sliderOptions, appliedHz, driftMode, lowFpsNative]);
+
+  // Drift mode: oscillate appliedHz between neighbor supported stops (every ~2s) to create slow movement when frozen
+  useEffect(() => {
+    if (!driftMode || lowFpsNative) return;
+    if (!sliderOptions.length) return;
+    let i = 0;
+    const options = sliderOptions.slice().sort((a, b) => a - b);
+    // find neighbors around requestedHz
+    const idx = options.reduce((bestIdx, val, idx) => (Math.abs(val - requestedHz) < Math.abs(options[bestIdx] - requestedHz) ? idx : bestIdx), 0);
+    const lower = Math.max(0, idx - 1);
+    const upper = Math.min(options.length - 1, idx + 1);
+    const seq = lower === upper ? [options[idx]] : [options[lower], options[upper]];
+    const interval = setInterval(() => {
+      const next = seq[i % seq.length];
+      i++;
+      if (next !== appliedHz) setAppliedHz(next);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [driftMode, lowFpsNative, sliderOptions, requestedHz, appliedHz]);
 
   if (!hasPermission) {
     return (
@@ -277,92 +207,104 @@ export default function VisionCameraScreen() {
 
   return (
     <View style={styles.container}>
-      <GestureDetector gesture={tapGesture}>
-        <VisionCameraView
-          remounting={remounting}
-          cameraKey={cameraKey}
-          cameraRef={cameraRef}
-          device={device!}
-          isActive={isActive}
-          cameraFps={cameraFps}
-          selectedFormat={selectedFormat}
-          torch={torchState}
-          onInitialized={() => {
-            cameraReadyRef.current = true;
-            setCameraInitialized(true);
-            const pending = pendingZoetropeRef.current;
-            if (pending) {
-              pendingZoetropeRef.current = null;
-              (async () => {
-                try {
-                  if (pending.type === 'set') {
-                    await Exposure.setManualExposure(pending.ns, caps?.maxIso);
-                    setExposureMode('manual');
-                    setCurrentShutterNs(pending.ns);
-                  }
-                } catch (e) {
-                  console.error('Applying pending exposure change failed', e);
-                }
-              })();
-            }
-          }}
-        />
-      </GestureDetector>
-      <StrobeOverlay enabled={enableStrobeOverlay && visualStrobeEnabled} strobeHz={strobeHz} maxDisplayHz={15} />
-      <View style={{ position: 'absolute', top: 16 + insets.top, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ color: 'white', fontWeight: '700' }}>{`RPM: ${Math.round(targetRpm)}`}</Text>
-        </View>
-      </View>
-      {torchStrobeEnabled && (
-        <View style={{ position: 'absolute', top: 50 + insets.top, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-          <Text style={{ color: 'white', fontWeight: '700' }}>{`Torch strobe: ${torchHz.toFixed(2)} Hz (m=${harmonic}×${harmonicUsed}=${harmonic * harmonicUsed})`}</Text>
-        </View>
-      )}
-      <View style={{ position: 'absolute', top: 16 + insets.top, right: 16, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-        <Text style={{ color: 'white', fontWeight: '700' }}>{shutterLabel}</Text>
-      </View>
-      {toast && <ToastOverlay message={toast} bottom={140 + insets.bottom} />}
-      <FocusOverlay point={focusPoint} />
-      <BackButton onPress={handleBack} />
-      {showShutterPanel && supportsManual && (
-        <ShutterPanel
-          bottom={100 + insets.bottom}
-          shutterLabel={shutterLabel}
-          minSeconds={minSeconds}
-          maxSeconds={maxSeconds}
-          currentShutterNs={currentShutterNs ?? Math.round(1e9 / (2 * (effectiveFps || fps || 30)))}
-          sliderValueFromNs={sliderValueFromNs}
-          nsFromSliderValue={nsFromSliderValue}
-          onValueChangeNs={handleSliderChangeNs}
-          onSlidingCompleteNs={handleSliderCompleteNs}
-          onPreset180={setPreset180}
-          onClose={() => setShowShutterPanel(false)}
-        />
-      )}
-      <ZoetropePanel
-        bottom={64 + insets.bottom}
-        targetRpm={targetRpm}
-        setTargetRpm={setTargetRpm}
-        rpmPresets={rpmPresets}
-        rpmMin={RPM_MIN}
-        rpmMax={RPM_MAX}
-        snapWindow={SNAP_WINDOW}
-        enableStrobeOverlay={enableStrobeOverlay}
-        visualStrobeEnabled={visualStrobeEnabled}
-        setVisualStrobeEnabled={setVisualStrobeEnabled}
-        torchStrobeEnabled={torchStrobeEnabled}
-        setTorchStrobeEnabled={setTorchStrobeEnabled}
-        onMarkPass={onMarkPass}
-        manualRpmRounded={manualRpmRounded}
-        imuTachEnabled={imuTachEnabled}
-        setImuTachEnabled={setImuTachEnabled}
-        imuRpmRounded={imuRpmRounded}
-        framesPerRev={framesPerRev}
-        setFramesPerRev={setFramesPerRev}
-        harmonic={harmonic}
-        setHarmonic={setHarmonic}
+      <VisionCameraView
+        remounting={false}
+        cameraKey={cameraKey}
+        cameraRef={cameraRef}
+        device={device}
+        isActive={isActive}
+        cameraFps={cameraFpsProp}
+        selectedFormat={lowFpsNative ? (nativeFormat ?? lockedFormat ?? selectedFormat) : (lockedFormat ?? selectedFormat)}
+        torch={torch}
+        onInitialized={() => {}}
       />
+
+      {/* Middle readouts */}
+      <View style={styles.centerPanel}>
+        <Text style={styles.hzReadout}>{(effectiveFps ?? appliedHz).toFixed(2)} <Text style={{ fontSize: 18 }}>Hz</Text></Text>
+        <Text style={styles.hzSubLabel}>Req: {requestedHz.toFixed(2)} Hz • Eff: {(effectiveFps ?? appliedHz).toFixed(2)} Hz</Text>
+        {lowFpsNative && nativeApplied && (
+          <Text style={styles.hzSubLabel}>
+            Native: {nativeApplied.appliedFps.toFixed(2)} Hz @ {nativeApplied.width}x{nativeApplied.height}
+          </Text>
+        )}
+        <Text style={styles.rpmText}>RPM: {rpm.toFixed(0)}</Text>
+      </View>
+
+      {/* Bottom slider with discrete supported stops */}
+      {sliderOptions.length > 0 && (
+        <View style={[styles.sliderContainer, { bottom: 56 + insets.bottom }]}>
+          <Text style={styles.sliderLabel}>Adjust Hz</Text>
+          <Slider
+            style={{ width: '100%', height: 40 }}
+            minimumValue={0}
+            maximumValue={Math.max(0, sliderOptions.length - 1)}
+            step={1}
+            value={sliderIndex}
+            minimumTrackTintColor="#ffffff"
+            maximumTrackTintColor="rgba(255,255,255,0.25)"
+            onValueChange={(val) => {
+              const idx = Math.round(val);
+              const next = sliderOptions[idx] ?? sliderOptions[sliderOptions.length - 1];
+              setRequestedHz(next);
+            }}
+            onSlidingComplete={(val) => {
+              const idx = Math.round(val);
+              const next = sliderOptions[idx] ?? sliderOptions[sliderOptions.length - 1];
+              setRequestedHz(next);
+            }}
+          />
+          <Text style={styles.sliderValue}>{requestedHz.toFixed(2)} Hz</Text>
+        </View>
+      )}
+
+      {/* Fine detune (native-only) to create slow drift when frozen */}
+      {Platform.OS === 'ios' && lowFpsAvailable && lowFpsNative && (
+        <View style={[styles.sliderContainer, { bottom: 120 + insets.bottom }]}> 
+          <Text style={styles.sliderLabel}>Fine Detune (±0.5 Hz)</Text>
+          <Slider
+            style={{ width: '100%', height: 40 }}
+            minimumValue={-0.5}
+            maximumValue={0.5}
+            step={0.01}
+            value={fineOffset}
+            minimumTrackTintColor="#ffffff"
+            maximumTrackTintColor="rgba(255,255,255,0.25)"
+            onValueChange={(val) => setFineOffset(val)}
+          />
+          <Text style={styles.sliderValue}>{fineOffset.toFixed(2)} Hz offset</Text>
+        </View>
+      )}
+
+      {/* Bottom bar: modes, torch, back */}
+      <View style={[styles.bottomBar, { paddingBottom: 12 + insets.bottom }]}>
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity
+            style={[styles.bottomButton, !lowFpsAvailable && { opacity: 0.5 }]}
+            onPress={() => {
+              if (!lowFpsAvailable) return; // ignore when not linked
+              setLowFpsNative((v) => !v);
+            }}
+            disabled={!lowFpsAvailable}
+          >
+            <Text style={styles.bottomButtonText}>
+              {lowFpsAvailable ? (lowFpsNative ? 'Low-FPS: On' : 'Low-FPS: Off') : 'Low-FPS: Unavailable'}
+            </Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.bottomButton} onPress={() => setDriftMode((v) => !v)}>
+          <Text style={styles.bottomButtonText}>{driftMode ? 'Drift: On' : 'Drift: Off'}</Text>
+        </TouchableOpacity>
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity style={styles.bottomButton} onPress={() => setSafeModeIOS((v) => !v)}>
+            <Text style={styles.bottomButtonText}>{safeModeIOS ? 'iOS Safe: On' : 'iOS Safe: Off'}</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.bottomButton} onPress={() => setTorch((t) => (t === 'on' ? 'off' : 'on'))}>
+          <Text style={styles.bottomButtonText}>{torch === 'on' ? 'Torch On' : 'Torch Off'}</Text>
+        </TouchableOpacity>
+        <BackButton onPress={handleBack} />
+      </View>
     </View>
   );
 }
@@ -372,6 +314,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'black',
   },
+  centerPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: '30%',
+    alignItems: 'center',
+  },
+  hzReadout: {
+    color: 'white',
+    fontWeight: '800',
+    fontSize: 42,
+  },
+  hzSubLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+    fontSize: 12,
+  },
+  rpmText: { color: 'white', marginTop: 10, fontSize: 18, fontWeight: '700' },
+  sliderContainer: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    alignItems: 'stretch',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  sliderLabel: { color: 'white', fontWeight: '700', marginBottom: 6, textAlign: 'center' },
+  sliderValue: { color: 'white', fontWeight: '600', marginTop: 6, textAlign: 'center' },
+  bottomBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bottomButton: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  bottomButtonText: { color: 'white', fontWeight: '700' },
   permissionText: {
     color: 'white',
     fontSize: 18,

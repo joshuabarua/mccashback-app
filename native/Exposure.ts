@@ -13,6 +13,10 @@ interface ExposureModule {
   getExposureCapabilities: () => Promise<ExposureCapabilities>;
   setManualExposure: (exposureNs: number, iso?: number) => Promise<void>;
   enableAutoExposure: () => Promise<void>;
+  setTargetFps: (fps: number, preferLowResolution?: boolean) => Promise<{ appliedFps: number; width: number; height: number }>;
+  resetFrameRate: () => Promise<void>;
+  // JS-only convenience; not implemented natively
+  isLowFpsAvailable?: () => boolean;
 }
 
 const LINKING_ERROR =
@@ -34,6 +38,22 @@ const Exposure: ExposureModule = {
   async enableAutoExposure() {
     if (!Native) throw new Error(LINKING_ERROR);
     return Native.enableAutoExposure();
+  },
+  async setTargetFps(fps: number, preferLowResolution: boolean = true) {
+    if (!Native || !(Native as any).setTargetFps) {
+      console.warn('[Exposure] setTargetFps not available yet (native not linked). Returning fallback.');
+      return { appliedFps: fps, width: 0, height: 0 };
+    }
+    return (Native as any).setTargetFps(fps, preferLowResolution);
+  },
+  async resetFrameRate() {
+    // If the native method isn't linked yet, just resolve without throwing
+    if (!Native || !(Native as any).resetFrameRate) return;
+    return (Native as any).resetFrameRate();
+  },
+  isLowFpsAvailable() {
+    const m = Native as any;
+    return !!m && typeof m.setTargetFps === 'function' && typeof m.resetFrameRate === 'function';
   },
 };
 

@@ -45,7 +45,7 @@ export default function VisionCameraView({
         // Surface camera errors to logs for diagnosis instead of silent native crashes
         console.error('VisionCamera onError', e?.nativeEvent ?? e);
       }}
-      frameProcessor={undefined}
+      frameProcessor={frameProcessor}
     />
   );
 }
