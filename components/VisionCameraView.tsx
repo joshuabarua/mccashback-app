@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Camera } from 'react-native-vision-camera';
 import type { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
@@ -28,6 +28,32 @@ export default function VisionCameraView({
   frameProcessor,
   torch = 'off',
 }: VisionCameraViewProps) {
+  // Log key props to help diagnose initialization issues
+  useEffect(() => {
+    const fmt = selectedFormat
+      ? {
+          width: selectedFormat.videoWidth,
+          height: selectedFormat.videoHeight,
+          minFps: selectedFormat.minFps,
+          maxFps: selectedFormat.maxFps,
+        }
+      : null;
+    console.log('VisionCameraView props', {
+      cameraKey,
+      fps: cameraFps,
+      format: fmt,
+      torch,
+      isActive,
+      deviceId: device?.id,
+      position: device?.position,
+    });
+  }, [cameraKey, cameraFps, selectedFormat, torch, isActive, device]);
+
+  const handleInitialized = () => {
+    console.log('VisionCameraView onInitialized fired');
+    onInitialized();
+  };
+
   if (remounting) return <View style={styles.camera} />;
   return (
     <Camera
@@ -37,15 +63,13 @@ export default function VisionCameraView({
       device={device}
       isActive={isActive}
       torch={torch}
-      video
       fps={cameraFps}
       format={selectedFormat}
-      onInitialized={onInitialized}
+      onInitialized={handleInitialized}
       onError={(e: any) => {
         // Surface camera errors to logs for diagnosis instead of silent native crashes
         console.error('VisionCamera onError', e?.nativeEvent ?? e);
       }}
-      frameProcessor={frameProcessor}
     />
   );
 }

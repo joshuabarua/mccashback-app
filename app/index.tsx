@@ -1,17 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Animated, Easing, useWindowDimensions } from 'react-native';
+import { useEffect, useRef, useCallback } from 'react';
+import { Animated, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useRef } from 'react';
 
 export default function HomeScreen() {
   const router = useRouter();
   const pulse = useRef(new Animated.Value(1)).current;
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
   const bottomGap = Math.max(16, Math.min(32, height * 0.04));
+
+  // Slow-spinning wheels background
+  const bgSpin = useRef(new Animated.Value(0)).current;
+  const bgRotate = bgSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  // Fade-in for text content
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslateY = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -34,6 +41,48 @@ export default function HomeScreen() {
     return () => loop.stop();
   }, [pulse]);
 
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(bgSpin, {
+        toValue: 1,
+        duration: 30000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      bgSpin.setValue(0);
+    };
+  }, [bgSpin]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Reset starting values on focus so animation always plays
+      textOpacity.setValue(0);
+      textTranslateY.setValue(24);
+      const anim = Animated.parallel([
+        Animated.timing(textOpacity, {
+          toValue: 1,
+          duration: 1100,
+          delay: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(textTranslateY, {
+          toValue: 0,
+          duration: 1100,
+          delay: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]);
+      anim.start();
+      return () => anim.stop();
+    }, [textOpacity, textTranslateY])
+  );
+
   const handleVisionCameraPress = () => {
     router.push('/vision-camera');
   };
@@ -45,6 +94,23 @@ export default function HomeScreen() {
         colors={['#fafafa', '#f5f5f5', '#eeeeee']}
         style={styles.container}
       >
+        {/* Faded, slow-spinning background icon */}
+        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+          <Animated.Image
+            source={require('../assets/images/adaptive-icon2.png')}
+            style={[
+              styles.bgSpinImage,
+              {
+                width: Math.max(width, height) * 1.2,
+                height: Math.max(width, height) * 1.2,
+                top: (height - Math.max(width, height) * 1.2) / 2,
+                left: (width - Math.max(width, height) * 1.2) / 2,
+                transform: [{ rotate: bgRotate }],
+              },
+            ]}
+            resizeMode="contain"
+          />
+        </View>
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -52,20 +118,20 @@ export default function HomeScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.content}>
+          <Animated.View style={[styles.content, { opacity: textOpacity, transform: [{ translateY: textTranslateY }] }]}>
             <Text style={styles.artistName}>Angus Greenhalgh</Text>
             <Text style={styles.title}>Automation in D Minor</Text>
 
             <View style={styles.descriptionContainer}>
               <Text style={styles.description}>
-                ✨ A generative sound sculpture that creates an infinite composition through the interplay of mechanical automation and digital processing. Each moment is unique, born from the tension between predictable patterns and chaotic emergence.
+                 A generative sound sculpture that creates an infinite composition through the interplay of mechanical automation and digital processing. Each moment is unique, born from the tension between predictable patterns and chaotic emergence.
               </Text>
             </View>
 
             <Text style={styles.footer}>
               Where automation meets artistry in perpetual motion
             </Text>
-          </View>
+          </Animated.View>
         </ScrollView>
 
         {/* Bottom-anchored button */}
@@ -99,6 +165,10 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
+  bgSpinImage: {
+    position: 'absolute',
+    opacity: 0.1,
+  },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 32,
@@ -106,33 +176,38 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
-    paddingTop: 60,
-    gap: 20,
+    paddingTop: 90,
+    gap: 30,
   },
   artistName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '300',
     color: '#4a4a4a',
-    letterSpacing: 2,
+    letterSpacing: 4,
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'double',
+    textDecorationColor: 'black',
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
+    marginTop: 40,
     color: '#5a5a5a',
     textAlign: 'center',
     letterSpacing: 1,
   },
   descriptionContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     padding: 24,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   description: {
     fontSize: 16,
     lineHeight: 26,
-    color: '#6a6a6a',
+    color: '#131313',
+    fontWeight: '600',
     textAlign: 'center',
   },
   
@@ -157,6 +232,10 @@ const styles = StyleSheet.create({
     color: '#7a7a7a',
     fontSize: 14,
     fontStyle: 'italic',
-    letterSpacing: 1,
+    letterSpacing: 2,
+    lineHeight: 20,
+    fontWeight: '400',
+  
+
   },
 });
