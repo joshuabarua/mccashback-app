@@ -74,17 +74,20 @@ export default function VisionCameraScreen() {
 
   // Pick a camera format that supports the requested FPS (requestedHz)
   // Always use extended options so the slider can reach lower Hz like the previous +/- buttons.
-  const { selectedFormat, effectiveFps, cameraFps, supportedFpsOptions } =
+  const { selectedFormat, effectiveFps, supportedFpsOptions } =
     useFormatsAndFps(device, requestedHz, setAppliedHz, false, true);
 
-  // Removed complex iOS format locking: rely on selectedFormat from the hook
+  // Lock the first good format after initialization to avoid disruptive reconfiguration
+  const [lockedFormat, setLockedFormat] = useState<CameraDeviceFormat | undefined>(undefined);
+  useEffect(() => {
+    if (!initialized) return;
+    if (!lockedFormat && selectedFormat) {
+      setLockedFormat(selectedFormat);
+    }
+  }, [initialized, lockedFormat, selectedFormat]);
 
-  const cameraKey = useMemo(() => {
-    const fmt = selectedFormat;
-    const base = `${fmt?.videoWidth}x${fmt?.videoHeight}-${fmt?.minFps}-${fmt?.maxFps}`;
-    const fpsPart = cameraFps == null ? "auto" : String(cameraFps);
-    return `${base}-${fpsPart}-std`;
-  }, [selectedFormat, cameraFps]);
+  // Use a stable key after init to prevent Camera remounts (which cause a black flash)
+  const stableKeyRef = useRef("camera-stable");
 
   // Retry state to force a remount while initializing
   const [bootNonce, setBootNonce] = useState(0);
@@ -95,15 +98,15 @@ export default function VisionCameraScreen() {
 
   // Keep a stable key before initialization to avoid repeated remounts
   const cameraKeyForMount = useMemo(
-    () => (initialized ? cameraKey : `boot-${bootNonce}`),
-    [initialized, cameraKey, bootNonce]
+    () => (initialized ? stableKeyRef.current : `boot-${bootNonce}`),
+    [initialized, bootNonce]
   );
 
-  // Use cameraFps as provided by the hook
-  const cameraFpsProp = cameraFps;
+  // Drive Camera fps from the appliedHz (which is constrained to the locked format)
+  const cameraFpsProp = appliedHz;
 
   // Compute props used during initialization without introducing new hooks below early returns
-  const selectedFormatProp = initialized ? selectedFormat : undefined;
+  const selectedFormatProp = initialized ? (lockedFormat ?? selectedFormat) : undefined;
   const cameraFpsDuringInit = initialized ? cameraFpsProp : undefined;
 
   // Ensure camera permission
@@ -119,7 +122,7 @@ export default function VisionCameraScreen() {
   };
 
   // Build slider stops from the actual format used by Camera (ensures every stop is supported by that format)
-  const formatForStops = useMemo(() => selectedFormat, [selectedFormat]);
+  const formatForStops = useMemo(() => (lockedFormat ?? selectedFormat), [lockedFormat, selectedFormat]);
   const sliderOptions = useMemo(() => {
     const f = formatForStops as CameraDeviceFormat | undefined;
     if (f && typeof f.minFps === "number" && typeof f.maxFps === "number") {
@@ -246,6 +249,8 @@ export default function VisionCameraScreen() {
         torch={torch}
         onInitialized={() => {
           setInitialized(true);
+          // lock first viable format to prevent reconfiguration flashes
+          setLockedFormat((prev) => prev ?? selectedFormat);
           console.log("initialized");
         }}
       />

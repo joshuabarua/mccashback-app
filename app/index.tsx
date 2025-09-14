@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useCallback } from 'react';
-import { Animated, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
@@ -87,6 +87,17 @@ export default function HomeScreen() {
     router.push('/vision-camera');
   };
 
+  const handleOpenInstagram = async () => {
+    const appUrl = 'instagram://user?username=angusgreenhalgh';
+    const webUrl = 'https://instagram.com/angusgreenhalgh';
+    try {
+      const supported = await Linking.canOpenURL(appUrl);
+      await Linking.openURL(supported ? appUrl : webUrl);
+    } catch {
+      await Linking.openURL(webUrl);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
@@ -131,6 +142,11 @@ export default function HomeScreen() {
             <Text style={styles.footer}>
               Where automation meets artistry in perpetual motion
             </Text>
+
+            <TouchableOpacity style={styles.socialRow} onPress={handleOpenInstagram} activeOpacity={0.7}>
+              <Ionicons name="logo-instagram" size={20} color="#E1306C" />
+              <Text style={styles.socialText}>@angusgreenhalgh</Text>
+            </TouchableOpacity>
           </Animated.View>
         </ScrollView>
 
@@ -209,6 +225,17 @@ const styles = StyleSheet.create({
     color: '#131313',
     fontWeight: '600',
     textAlign: 'center',
+  },
+  socialRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  socialText: {
+    color: '#2b2b2b',
+    fontSize: 16,
+    fontWeight: '600',
   },
   
   strobeButton: {
