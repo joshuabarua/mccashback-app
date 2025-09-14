@@ -8,6 +8,11 @@ export type ExposureCapabilities = {
   supportsManual: boolean;
 };
 
+export type CurrentExposure = {
+  exposureNs: number;
+  iso: number;
+};
+
 // Expected native module shape
 interface ExposureModule {
   getExposureCapabilities: () => Promise<ExposureCapabilities>;
@@ -17,6 +22,8 @@ interface ExposureModule {
   resetFrameRate: () => Promise<void>;
   // JS-only convenience; not implemented natively
   isLowFpsAvailable?: () => boolean;
+  // New native method
+  getCurrentExposure: () => Promise<CurrentExposure>;
 }
 
 const LINKING_ERROR =
@@ -54,6 +61,12 @@ const Exposure: ExposureModule = {
   isLowFpsAvailable() {
     const m = Native as any;
     return !!m && typeof m.setTargetFps === 'function' && typeof m.resetFrameRate === 'function';
+  },
+  async getCurrentExposure() {
+    if (!Native || !(Native as any).getCurrentExposure) {
+      return { exposureNs: 0, iso: 0 };
+    }
+    return (Native as any).getCurrentExposure();
   },
 };
 

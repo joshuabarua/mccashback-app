@@ -25,6 +25,7 @@ import {
 } from "react-native-vision-camera";
 import VisionCameraView from "../components/VisionCameraView";
 import { useFormatsAndFps } from "../hooks/useFormatsAndFps";
+import Exposure from "../native/Exposure";
 const wheelsSpinAsset = require("../assets/images/wheelsboxes.png");
 
 export default function VisionCameraScreen() {
@@ -36,11 +37,19 @@ export default function VisionCameraScreen() {
 
   // Strobe method state
   const [isActive, setIsActive] = useState(true);
-  const [requestedHz, setRequestedHz] = useState(24);
-  const [appliedHz, setAppliedHz] = useState(24);
+  // Default to ~840 RPM => 14 Hz
+  const [requestedHz, setRequestedHz] = useState(14);
+  const [appliedHz, setAppliedHz] = useState(14);
   const [torch, setTorch] = useState<"on" | "off">("off");
   const [driftMode, setDriftMode] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  // Init timing & logging helpers
+  const t0Ref = useRef<number>(Date.now());
+  const elapse = useCallback(() => `${((Date.now() - t0Ref.current) / 1000).toFixed(3)}s`, []);
+  useEffect(() => {
+    console.log(`[Init ${elapse()}] VisionCameraScreen mounted`);
+  }, [elapse]);
+
 
   // Spinner for initializing state
   const spinValue = useRef(new Animated.Value(0)).current;
@@ -74,7 +83,7 @@ export default function VisionCameraScreen() {
 
   // Pick a camera format that supports the requested FPS (requestedHz)
   // Always use extended options so the slider can reach lower Hz like the previous +/- buttons.
-  const { selectedFormat, effectiveFps, supportedFpsOptions } =
+  const { selectedFormat, effectiveFps } =
     useFormatsAndFps(device, requestedHz, setAppliedHz, false, true);
 
   // Lock the first good format after initialization to avoid disruptive reconfiguration
@@ -114,6 +123,37 @@ export default function VisionCameraScreen() {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
+  // Set a fast manual exposure (~0.0007s) once after initialization, keeping current ISO
+  const isoSetRef = useRef(false);
+  useEffect(() => {
+    if (!initialized || isoSetRef.current) return;
+    (async () => {
+      try {
+        const caps = await Exposure.getExposureCapabilities();
+        if (!caps?.supportsManual) return;
+        // 0.0007 seconds -> 700,000 ns
+        const shutterNs = 700_000;
+        // Omit ISO so native keeps current ISO (ExposureModule clamps internally)
+        await Exposure.setManualExposure(shutterNs);
+        console.log(
+          `[Exposure] Applied manual shutter: ${(shutterNs / 1e9).toFixed(6)}s (${shutterNs} ns), ISO kept`
+        );
+        setExpNs(shutterNs);
+        try {
+          const current = await Exposure.getCurrentExposure();
+          console.log(
+            `[Exposure] Device reports shutter: ${(current.exposureNs / 1e9).toFixed(6)}s (${Math.round(
+              current.exposureNs
+            )} ns), ISO: ${Math.round(current.iso)}`
+          );
+        } catch {}
+        isoSetRef.current = true;
+      } catch (e) {
+        console.warn("Setting fast manual exposure failed or unsupported", e);
+      }
+    })();
+  }, [initialized]);
+
   // Removed native low-FPS configuration effects
 
   const handleBack = () => {
@@ -121,20 +161,100 @@ export default function VisionCameraScreen() {
     router.back();
   };
 
+  // Exposure slider state (manual shutter) and caps
+  const [expMinNs, setExpMinNs] = useState<number | null>(null);
+  const [expMaxNs, setExpMaxNs] = useState<number | null>(null);
+  const [expNs, setExpNs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!initialized) return;
+    let active = true;
+    (async () => {
+      try {
+        const caps = await Exposure.getExposureCapabilities();
+        if (!active) return;
+        if (caps?.supportsManual) {
+          setExpMinNs(caps.minExposureNs);
+          setExpMaxNs(caps.maxExposureNs);
+          // Read current device value for slider thumb
+          try {
+            const cur = await Exposure.getCurrentExposure();
+            if (!active) return;
+            setExpNs(cur.exposureNs);
+          } catch {
+            setExpNs(null);
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      active = false;
+    };
+  }, [initialized]);
+
+  // Clamp range to 0.1ms - 0.9ms within device-supported bounds
+  const expMinClamp = useMemo(() => {
+    const deviceMin = expMinNs ?? 0;
+    return Math.max(deviceMin, 100_000); // 0.1 ms
+  }, [expMinNs]);
+  const expMaxClamp = useMemo(() => {
+    const deviceMax = expMaxNs ?? Number.MAX_SAFE_INTEGER;
+    return Math.min(deviceMax, 900_000); // 0.9 ms
+  }, [expMaxNs]);
+
+  const applyExposure = useCallback(async (ns: number) => {
+    try {
+      await Exposure.setManualExposure(ns);
+      setExpNs(ns);
+      console.log(
+        `[Exposure ${elapse()}] setManualExposure -> ${(ns / 1e9).toFixed(6)}s (${Math.round(ns)} ns)`
+      );
+      try {
+        const cur = await Exposure.getCurrentExposure();
+        console.log(
+          `[Exposure ${elapse()}] device now ${(cur.exposureNs / 1e9).toFixed(6)}s (${Math.round(
+            cur.exposureNs
+          )} ns), ISO ${Math.round(cur.iso)}`
+        );
+      } catch {}
+    } catch (e) {
+      console.warn("setManualExposure failed", e);
+    }
+  }, [elapse]);
+
+  // Re-apply manual exposure whenever Hz changes, since camera reconfig can bump exposure
+  useEffect(() => {
+    if (!initialized) return;
+    if (expNs == null) return;
+    const ns = expNs;
+    const id = setTimeout(() => {
+      applyExposure(ns);
+    }, 150);
+    return () => clearTimeout(id);
+  }, [initialized, appliedHz, applyExposure, expNs]);
+
   // Build slider stops from the actual format used by Camera (ensures every stop is supported by that format)
   const formatForStops = useMemo(() => (lockedFormat ?? selectedFormat), [lockedFormat, selectedFormat]);
   const sliderOptions = useMemo(() => {
     const f = formatForStops as CameraDeviceFormat | undefined;
     if (f && typeof f.minFps === "number" && typeof f.maxFps === "number") {
-      const min = Math.max(1, Math.ceil(f.minFps as number));
-      const max = Math.max(min, Math.floor(f.maxFps as number));
+      // Build stops at 10-RPM increments within the format's fps range
+      const minHz = Math.max(1, f.minFps as number);
+      const maxHz = Math.max(minHz, f.maxFps as number);
+      const minRPM = Math.ceil((minHz * 60) / 10) * 10; // next multiple of 10
+      const maxRPM = Math.floor((maxHz * 60) / 10) * 10; // last multiple of 10
       const arr: number[] = [];
-      for (let v = min; v <= max; v++) arr.push(v);
-      return arr;
+      for (let rpm = minRPM; rpm <= maxRPM; rpm += 10) {
+        arr.push(rpm / 60);
+      }
+      // Fallback to at least the current requestedHz if no multiples fit
+      return arr.length ? arr : [requestedHz];
     }
-    const list = (supportedFpsOptions || []).slice().sort((a, b) => a - b);
-    return list.length ? list : [requestedHz];
-  }, [formatForStops, supportedFpsOptions, requestedHz]);
+    // Fallback: center around current target in 10-RPM steps
+    const baseRPM = Math.round((requestedHz || 30) * 60);
+    const arr: number[] = [];
+    for (let rpm = baseRPM - 30; rpm <= baseRPM + 30; rpm += 10) arr.push(rpm / 60);
+    return arr;
+  }, [formatForStops, requestedHz]);
   const sliderIndex = useMemo(() => {
     if (!sliderOptions.length) return 0;
     const idx = sliderOptions.reduce((bestIdx, val, idx) => {
@@ -150,6 +270,18 @@ export default function VisionCameraScreen() {
     const hzVal = Number.isFinite(effectiveFps) ? effectiveFps : appliedHz;
     return hzVal * 60; // divisor fixed to 1
   }, [effectiveFps, appliedHz]);
+
+  // Crisp logs for requested/applied/effective changes
+  useEffect(() => {
+    console.log(`[Hz ${elapse()}] requestedHz=${requestedHz.toFixed(3)} (${(requestedHz * 60).toFixed(0)} rpm)`);
+  }, [requestedHz, elapse]);
+  useEffect(() => {
+    console.log(`[Hz ${elapse()}] appliedHz=${appliedHz.toFixed(3)} (${(appliedHz * 60).toFixed(0)} rpm)`);
+  }, [appliedHz, elapse]);
+  useEffect(() => {
+    if (!Number.isFinite(effectiveFps)) return;
+    console.log(`[Hz ${elapse()}] effectiveFps=${Number(effectiveFps).toFixed(3)} (${(Number(effectiveFps) * 60).toFixed(0)} rpm)`);
+  }, [effectiveFps, elapse]);
 
   // Debounce applying requestedHz to the camera (snap to nearest supported option from the active Camera format)
   useEffect(() => {
@@ -251,7 +383,10 @@ export default function VisionCameraScreen() {
           setInitialized(true);
           // lock first viable format to prevent reconfiguration flashes
           setLockedFormat((prev) => prev ?? selectedFormat);
-          console.log("initialized");
+          const fmt = (lockedFormat ?? selectedFormat);
+          const dims = fmt ? `${fmt.videoWidth}x${fmt.videoHeight}` : 'unknown';
+          const fpsRange = fmt ? `${fmt.minFps}-${fmt.maxFps}` : 'unknown';
+          console.log(`[Init ${elapse()}] onInitialized; format=${dims} fpsRange=${fpsRange}; device=${device?.id}`);
         }}
       />
       {!initialized && (
@@ -273,8 +408,8 @@ export default function VisionCameraScreen() {
 
       {initialized && (
         <>
-          {/* Middle readouts */}
-          <View style={[styles.centerPanel, { bottom: insets.bottom + 120 }]}>
+          {/* Top readouts */}
+          <View style={[styles.centerPanel, { top: insets.top + 12 }]}>
             <Text style={styles.hzReadout}>
               {(effectiveFps ?? appliedHz).toFixed(2)}{" "}
               <Text style={{ fontSize: 18 }}>Hz</Text>
@@ -305,6 +440,32 @@ export default function VisionCameraScreen() {
                   setRequestedHz(next);
                 }}
               />
+            </View>
+          )}
+
+          {/* Exposure control: manual shutter slider */}
+          {expMinNs != null && expMaxNs != null && (
+            <View style={[styles.sliderContainer, { bottom: 120 + insets.bottom }]}> 
+              <Text style={styles.sliderLabel}>Exposure</Text>
+              <Slider
+                style={{ width: "80%", height: 40 }}
+                minimumValue={expMinClamp}
+                maximumValue={expMaxClamp}
+                value={
+                  expNs ?? Math.max(expMinClamp, Math.min(expMaxClamp, 700000))
+                }
+                minimumTrackTintColor="#ffffff"
+                maximumTrackTintColor="rgba(255,255,255,0.25)"
+                onValueChange={(val) => {
+                  const v = Math.max(expMinClamp, Math.min(expMaxClamp, Math.round(val)));
+                  setExpNs(v);
+                }}
+                onSlidingComplete={(val) => {
+                  const v = Math.max(expMinClamp, Math.min(expMaxClamp, Math.round(val)));
+                  applyExposure(v);
+                }}
+              />
+              {/* Exposure numeric readout removed per request */}
             </View>
           )}
 
@@ -370,10 +531,22 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.35)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    backgroundColor: "rgba(0,0,0,0.25)",
     borderRadius: 12,
+    paddingVertical: 10,
+  },
+  exposureReadout: {
+    color: "white",
+    fontSize: 12,
+    opacity: 0.85,
+    marginTop: 6,
+  },
+  exposureButtonsRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   sliderLabel: {
     color: "white",

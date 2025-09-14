@@ -9,6 +9,28 @@ class Exposure: NSObject {
     _device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
     return _device
   }
+
+  // Read-only: return current exposure duration (ns) and ISO
+  @objc(getCurrentExposure:rejecter:)
+  func getCurrentExposure(_ resolve: @escaping RCTPromiseResolveBlock,
+                          rejecter reject: @escaping RCTPromiseRejectBlock) {
+    DispatchQueue.main.async {
+      guard let d = self.device else {
+        resolve([
+          "exposureNs": NSNumber(value: 0),
+          "iso": NSNumber(value: 0)
+        ])
+        return
+      }
+      let durSeconds = CMTimeGetSeconds(d.exposureDuration)
+      let ns = max(0.0, durSeconds) * 1_000_000_000.0
+      let isoVal = d.iso
+      resolve([
+        "exposureNs": NSNumber(value: ns),
+        "iso": NSNumber(value: isoVal)
+      ])
+    }
+  }
   private var _device: AVCaptureDevice?
 
   @objc static func requiresMainQueueSetup() -> Bool { return true }
@@ -65,14 +87,15 @@ class Exposure: NSObject {
         let clampedSeconds = max(minSeconds, min(maxSeconds, requested))
         let duration = CMTimeMakeWithSeconds(clampedSeconds, preferredTimescale: 1_000_000_000)
 
-        // Clamp ISO if provided, otherwise pick a high but valid ISO to compensate for short exposure
+        // Clamp ISO if provided, otherwise keep current device ISO
         let minISO = fmt.minISO
         let maxISO = fmt.maxISO
         var isoValue: Float
         if let isoNum = iso?.floatValue {
           isoValue = max(minISO, min(maxISO, isoNum))
         } else {
-          isoValue = max(minISO, min(maxISO, maxISO))
+          let currentISO = d.iso
+          isoValue = max(minISO, min(maxISO, currentISO))
         }
 
         d.setExposureModeCustom(duration: duration, iso: isoValue, completionHandler: nil)

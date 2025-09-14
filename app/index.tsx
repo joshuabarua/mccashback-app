@@ -143,6 +143,10 @@ export default function HomeScreen() {
               Where automation meets artistry in perpetual motion
             </Text>
 
+            <Text style={styles.sliderHint}>
+              Adjust the sliders to watch an ever‑changing display of images emerge.
+            </Text>
+
             <TouchableOpacity style={styles.socialRow} onPress={handleOpenInstagram} activeOpacity={0.7}>
               <Ionicons name="logo-instagram" size={20} color="#E1306C" />
               <Text style={styles.socialText}>@angusgreenhalgh</Text>
@@ -156,7 +160,7 @@ export default function HomeScreen() {
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: insets.bottom + bottomGap,
+            bottom: Math.max(0, insets.bottom + bottomGap - 20),
             alignItems: 'center',
           }}
         >
@@ -236,6 +240,13 @@ const styles = StyleSheet.create({
     color: '#2b2b2b',
     fontSize: 16,
     fontWeight: '600',
+  },
+  sliderHint: {
+    marginTop: 10,
+    textAlign: 'center',
+    color: '#6a6a6a',
+    fontSize: 13,
+    lineHeight: 18,
   },
   
   strobeButton: {
