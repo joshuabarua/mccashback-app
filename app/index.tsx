@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useCallback } from 'react';
-import { Animated, Easing, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -12,6 +13,13 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const bottomGap = Math.max(16, Math.min(32, height * 0.04));
+
+  // Buy Me a Coffee modal state and constants
+  const BMAC_URL = 'https://buymeacoffee.com/mccashback';
+  const KEY_BMAC_DISABLED = 'support.bmac.disabled';
+  const KEY_BMAC_LAST_PROMPT = 'support.bmac.lastPrompt';
+  const KEY_BMAC_LAUNCH_COUNT = 'support.bmac.launchCount';
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
   // Slow-spinning wheels background
   const bgSpin = useRef(new Animated.Value(0)).current;
@@ -83,6 +91,66 @@ export default function HomeScreen() {
     }, [textOpacity, textTranslateY])
   );
 
+  // Show support modal on home focus based on stored preferences
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        try {
+          const disabled = await AsyncStorage.getItem(KEY_BMAC_DISABLED);
+          if (!active || disabled === '1') return;
+          // First two launches: always show (unless disabled)
+          const rawCount = await AsyncStorage.getItem(KEY_BMAC_LAUNCH_COUNT);
+          let count = parseInt(rawCount ?? '0', 10) || 0;
+          count += 1;
+          await AsyncStorage.setItem(KEY_BMAC_LAUNCH_COUNT, String(count));
+          if (count <= 2) {
+            if (active) setShowSupportModal(true);
+            return;
+          }
+          // After first 2 launches: snooze for 7 days
+          const last = await AsyncStorage.getItem(KEY_BMAC_LAST_PROMPT);
+          if (!last) {
+            if (active) setShowSupportModal(true);
+            return;
+          }
+          const lastMs = parseInt(last, 10) || 0;
+          const oneWeek = 7 * 24 * 60 * 60 * 1000;
+          if (Date.now() - lastMs > oneWeek) {
+            if (active) setShowSupportModal(true);
+          }
+        } catch {}
+      })();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  const handleSupportNow = async () => {
+    try {
+      await AsyncStorage.setItem(KEY_BMAC_DISABLED, '1');
+    } catch {}
+    setShowSupportModal(false);
+    try {
+      await Linking.openURL(BMAC_URL);
+    } catch {}
+  };
+
+  const handleNotNow = async () => {
+    try {
+      await AsyncStorage.setItem(KEY_BMAC_LAST_PROMPT, String(Date.now()));
+    } catch {}
+    setShowSupportModal(false);
+  };
+
+  const handleDontShow = async () => {
+    try {
+      await AsyncStorage.setItem(KEY_BMAC_DISABLED, '1');
+    } catch {}
+    setShowSupportModal(false);
+  };
+
   const handleVisionCameraPress = () => {
     router.push('/vision-camera');
   };
@@ -105,6 +173,40 @@ export default function HomeScreen() {
         colors={['#fafafa', '#f5f5f5', '#eeeeee']}
         style={styles.container}
       >
+        {/* Support modal */}
+        <Modal
+          transparent
+          visible={showSupportModal}
+          animationType="fade"
+          onRequestClose={() => setShowSupportModal(false)}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowSupportModal(false)}>
+            <View style={styles.modalCard} pointerEvents="box-none">
+              <View style={{ alignItems: 'center', marginBottom: 4 }}>
+                <Ionicons name="cafe" size={28} color="#FFDD00" />
+              </View>
+              <Text style={styles.modalTitle}>Buy me a coffee?</Text>
+              <Text style={styles.modalBody}>
+                Hi! I&apos;m a solo artist and musician. If you like what you see,
+                consider buying me a coffee to support my art via the link below.
+              </Text>
+              <View style={styles.modalButtonsRow}>
+                <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleNotNow}>
+                  <Text style={styles.modalBtnSecondaryText}>Not now</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={handleSupportNow}>
+                  <View style={styles.modalBtnContent}>
+                    <Ionicons name="cafe" size={18} color="#FFDD00" />
+                    <Text style={[styles.modalBtnPrimaryText, { marginLeft: 6 }]}>Buy me a coffee</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity onPress={handleDontShow} style={styles.modalDontShowLink}>
+                <Text style={styles.modalDontShowText}>Don’t show again</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Modal>
         {/* Faded, slow-spinning background icon */}
         <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
           <Animated.Image
@@ -144,8 +246,16 @@ export default function HomeScreen() {
             </Text>
 
             <Text style={styles.sliderHint}>
-              Adjust the sliders to watch an ever‑changing display of images emerge.
+              Adjust the sliders to view hidden animations.
             </Text>
+
+            {/* Flashing images warning */}
+            <View style={styles.warningRow}>
+              <Ionicons name="warning" size={16} color="#ff9900" />
+              <Text style={styles.warningText}>
+                This app may display flashing images.
+              </Text>
+            </View>
 
             <TouchableOpacity style={styles.socialRow} onPress={handleOpenInstagram} activeOpacity={0.7}>
               <Ionicons name="logo-instagram" size={20} color="#E1306C" />
@@ -247,6 +357,90 @@ const styles = StyleSheet.create({
     color: '#6a6a6a',
     fontSize: 13,
     lineHeight: 18,
+  },
+  warningRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  warningText: {
+    color: '#ff9900',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: 'white',
+    borderRadius: 14,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#222',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalBody: {
+    fontSize: 14,
+    color: '#4a4a4a',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  modalBtnPrimary: {
+    backgroundColor: '#6b6bff',
+  },
+  modalBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnPrimaryText: {
+    color: 'white',
+    fontWeight: '800',
+  },
+  modalBtnSecondary: {
+    backgroundColor: '#ededed',
+  },
+  modalBtnSecondaryText: {
+    color: '#333',
+    fontWeight: '700',
+  },
+  modalDontShowLink: {
+    marginTop: 10,
+    alignSelf: 'center',
+  },
+  modalDontShowText: {
+    color: '#7a7a7a',
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
   
   strobeButton: {

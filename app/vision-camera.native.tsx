@@ -43,6 +43,10 @@ export default function VisionCameraScreen() {
   const [torch, setTorch] = useState<"on" | "off">("off");
   const [driftMode, setDriftMode] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  // One-time flashing images toast
+  const [showFlashToast, setShowFlashToast] = useState(false);
+  const flashToastOpacity = useRef(new Animated.Value(0)).current;
+  const flashToastShownRef = useRef(false);
   // Init timing & logging helpers
   const t0Ref = useRef<number>(Date.now());
   const elapse = useCallback(() => `${((Date.now() - t0Ref.current) / 1000).toFixed(3)}s`, []);
@@ -122,6 +126,20 @@ export default function VisionCameraScreen() {
   useEffect(() => {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
+
+  // Show a short flashing images toast once after initialization
+  useEffect(() => {
+    if (!initialized) return;
+    if (flashToastShownRef.current) return;
+    flashToastShownRef.current = true;
+    setShowFlashToast(true);
+    flashToastOpacity.setValue(0);
+    Animated.sequence([
+      Animated.timing(flashToastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.delay(2500),
+      Animated.timing(flashToastOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start(() => setShowFlashToast(false));
+  }, [initialized, flashToastOpacity]);
 
   // Set a fast manual exposure (~0.0007s) once after initialization, keeping current ISO
   const isoSetRef = useRef(false);
@@ -417,6 +435,29 @@ export default function VisionCameraScreen() {
             <Text style={styles.rpmText}>RPM: {rpm.toFixed(0)}</Text>
           </View>
 
+          {/* Short flashing-images toast */}
+          {showFlashToast && (
+            <Animated.View
+              style={[
+                styles.flashToast,
+                {
+                  top: insets.top + 64,
+                  opacity: flashToastOpacity,
+                  transform: [
+                    {
+                      translateY: flashToastOpacity.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-6, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Text style={styles.flashToastText}>Warning: flashing images</Text>
+            </Animated.View>
+          )}
+
           {/* Bottom slider with discrete supported stops */}
           {sliderOptions.length > 0 && (
             <View style={[styles.sliderContainer, { bottom: 48 + insets.bottom }]}> 
@@ -558,6 +599,19 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 4,
     textAlign: "center",
+  },
+  flashToast: {
+    position: "absolute",
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  flashToastText: {
+    color: "#ff9900",
+    fontWeight: "800",
+    letterSpacing: 0.25,
   },
   bottomBar: {
     position: "absolute",
