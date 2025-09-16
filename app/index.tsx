@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -20,6 +20,7 @@ export default function HomeScreen() {
   const KEY_BMAC_LAST_PROMPT = 'support.bmac.lastPrompt';
   const KEY_BMAC_LAUNCH_COUNT = 'support.bmac.launchCount';
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showWarning, setShowWarning] = useState(true);
 
   // Slow-spinning wheels background
   const bgSpin = useRef(new Animated.Value(0)).current;
@@ -27,6 +28,8 @@ export default function HomeScreen() {
   // Fade-in for text content
   const textOpacity = useRef(new Animated.Value(0)).current;
   const textTranslateY = useRef(new Animated.Value(24)).current;
+  // Wink animation for eye icon
+  const winkScaleY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -91,6 +94,25 @@ export default function HomeScreen() {
     }, [textOpacity, textTranslateY])
   );
 
+  // Occasionally wink the eye icon (compress vertically briefly)
+  useEffect(() => {
+    let mounted = true;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      const delay = 4000 + Math.random() * 6000; // 4–10s
+      timeout = setTimeout(() => {
+        Animated.sequence([
+          Animated.timing(winkScaleY, { toValue: 0.15, duration: 90, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+          Animated.timing(winkScaleY, { toValue: 1, duration: 130, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        ]).start(() => {
+          if (mounted) schedule();
+        });
+      }, delay);
+    };
+    schedule();
+    return () => { mounted = false; if (timeout) clearTimeout(timeout); };
+  }, [winkScaleY]);
+
   // Show support modal on home focus based on stored preferences
   useFocusEffect(
     useCallback(() => {
@@ -124,6 +146,15 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
+    }, [])
+  );
+
+  // Show flashing images warning for 10 seconds on home focus
+  useFocusEffect(
+    useCallback(() => {
+      setShowWarning(true);
+      const id = setTimeout(() => setShowWarning(false), 10_000);
+      return () => clearTimeout(id);
     }, [])
   );
 
@@ -227,13 +258,19 @@ export default function HomeScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: insets.bottom + bottomGap + 100 },
+            { paddingBottom: insets.bottom + bottomGap + 50 },
           ]}
           showsVerticalScrollIndicator={false}
         >
           <Animated.View style={[styles.content, { opacity: textOpacity, transform: [{ translateY: textTranslateY }] }]}>
             <Text style={styles.artistName}>Angus Greenhalgh</Text>
-            <Text style={styles.title}>Automation in D Minor</Text>
+            <Text style={styles.title}>
+              <Text style={styles.titleMain}>Automation</Text>
+              {"\n"}
+              <Text style={styles.titleIn}>in</Text>
+              {"\n"}
+              <Text style={styles.titleMinor}>D Minor</Text>
+            </Text>
 
             <View style={styles.descriptionContainer}>
               <Text style={styles.description}>
@@ -249,13 +286,15 @@ export default function HomeScreen() {
               Adjust the sliders to view hidden animations.
             </Text>
 
-            {/* Flashing images warning */}
-            <View style={styles.warningRow}>
-              <Ionicons name="warning" size={16} color="#ff9900" />
-              <Text style={styles.warningText}>
-                This app may display flashing images.
-              </Text>
-            </View>
+            {/* Flashing images warning (auto-hides after 10s) */}
+            {showWarning && (
+              <View style={styles.warningRow}>
+                <Ionicons name="warning" size={16} color="#ff9900" />
+                <Text style={styles.warningText}>
+                  This app may display flashing images.
+                </Text>
+              </View>
+            )}
 
             <TouchableOpacity style={styles.socialRow} onPress={handleOpenInstagram} activeOpacity={0.7}>
               <Ionicons name="logo-instagram" size={20} color="#E1306C" />
@@ -276,10 +315,12 @@ export default function HomeScreen() {
         >
           <Animated.View style={{ transform: [{ scale: pulse }] }}>
             <TouchableOpacity
-              style={[styles.strobeButton, { backgroundColor: '#6b6bff' }]}
+              style={[styles.strobeButton, { backgroundColor: '#C7C2FF' }]}
               onPress={handleVisionCameraPress}
             >
-              <Ionicons name="eye" size={36} color="white" />
+              <Animated.View style={{ transform: [{ scaleY: winkScaleY }] }}>
+                <Ionicons name="eye" size={36} color="white" />
+              </Animated.View>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -306,8 +347,8 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
-    paddingTop: 90,
-    gap: 30,
+    paddingTop: 80,
+    gap: 25,
   },
   artistName: {
     fontSize: 22,
@@ -320,11 +361,34 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontWeight: '700',
-    marginTop: 40,
+    fontWeight: '400',
     color: '#5a5a5a',
     textAlign: 'center',
-    letterSpacing: 1,
+    letterSpacing: 4,
+    lineHeight: 36,
+    width: '90%',
+  
+
+  },
+  titleMain: {
+    fontSize: 32,
+    fontWeight: '400',
+    color: '#5a5a5a',
+    letterSpacing: 5,
+  },
+  titleIn: {
+    fontSize: 22,
+    fontWeight: '400',
+    color: '#5a5a5a',
+    letterSpacing: 2,
+    lineHeight: 24,
+    },
+  titleMinor: {
+    fontSize: 28,
+    fontWeight: '400',
+    color: '#5a5a5a',
+    letterSpacing: 3,
+    lineHeight: 32,
   },
   descriptionContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
@@ -341,7 +405,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   socialRow: {
-    marginTop: 14,
+    marginTop: -8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
