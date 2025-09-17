@@ -11,14 +11,15 @@
     "ios": {
       "icon": "./assets/images/iosicon.png",
       "buildNumber": "1",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.joshuabarua.mccashback",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera for scanning and recording features.",
         "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording.",
         "NSPhotoLibraryAddUsageDescription": "Allow saving recorded videos to your Photos library.",
         "ITSAppUsesNonExemptEncryption": false,
-        "CFBundleDisplayName": "Automation"
+        "CFBundleDisplayName": "Automation",
+        "UIRequiresFullScreen": true
       }
     },
     "android": {
