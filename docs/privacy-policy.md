@@ -1,8 +1,3 @@
----
-layout: default
-title: Privacy Policy
----
-
 # Privacy Policy for "Automation"
 
 Effective date: 2025-09-17
@@ -32,9 +27,7 @@ Because the App does not collect personal data or transmit content, there is no 
 We may update this policy to reflect changes in the App’s functionality. Updates will be posted on this page with a new Effective date.
 
 ## 8. Contact
-For questions about this policy, please contact: your-email@example.com
-
----
+For questions about this policy, please contact: joshua.k.barua+playstorecontact@gmail.com
 
 Notes:
 - If future versions of the App add analytics, crash reporting, accounts, cloud sync, or other data collection, this policy will be updated accordingly, and disclosures will be made in the app stores’ Data Safety (Google Play) and App Privacy (Apple) sections.
