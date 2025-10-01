@@ -10,7 +10,6 @@
     "newArchEnabled": true,
     "ios": {
       "icon": "./assets/images/iosicon.png",
-      "buildNumber": "1",
       "supportsTablet": false,
       "bundleIdentifier": "com.joshuabarua.mccashback",
       "infoPlist": {
