@@ -14,7 +14,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.joshuabarua.mccashback",
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera for scanning and recording features.",
+        "NSCameraUsageDescription": "This app uses the camera to capture real-time video of rotating objects and apply visual effects by adjusting frame rate and exposure settings to create unique animations.",
         "NSMicrophoneUsageDescription": "This app may access the microphone if needed for video recording.",
         "NSPhotoLibraryAddUsageDescription": "Allow saving recorded videos to your Photos library.",
         "ITSAppUsesNonExemptEncryption": false,

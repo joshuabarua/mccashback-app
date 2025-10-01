@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
@@ -113,9 +113,12 @@ export default function HomeScreen() {
     return () => { mounted = false; if (timeout) clearTimeout(timeout); };
   }, [winkScaleY]);
 
-  // Show support modal on home focus based on stored preferences
+  // Show support modal on home focus based on stored preferences (Android only)
   useFocusEffect(
     useCallback(() => {
+      // Disable Buy Me a Coffee on iOS per Apple App Store guidelines (3.1.1)
+      if (Platform.OS === 'ios') return;
+      
       let active = true;
       (async () => {
         try {
@@ -204,40 +207,42 @@ export default function HomeScreen() {
         colors={['#fafafa', '#f5f5f5', '#eeeeee']}
         style={styles.container}
       >
-        {/* Support modal */}
-        <Modal
-          transparent
-          visible={showSupportModal}
-          animationType="fade"
-          onRequestClose={() => setShowSupportModal(false)}
-        >
-          <Pressable style={styles.modalBackdrop} onPress={() => setShowSupportModal(false)}>
-            <View style={styles.modalCard} pointerEvents="box-none">
-              <View style={{ alignItems: 'center', marginBottom: 4 }}>
-                <Ionicons name="cafe" size={28} color="#FFDD00" />
-              </View>
-              <Text style={styles.modalTitle}>Buy me a coffee?</Text>
-              <Text style={styles.modalBody}>
-                Hi! I&apos;m a solo artist and musician. If you like what you see,
-                consider buying me a coffee to support my art via the link below.
-              </Text>
-              <View style={styles.modalButtonsRow}>
-                <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleNotNow}>
-                  <Text style={styles.modalBtnSecondaryText}>Not now</Text>
+        {/* Support modal (Android only - iOS restricted per App Store guidelines 3.1.1) */}
+        {Platform.OS !== 'ios' && (
+          <Modal
+            transparent
+            visible={showSupportModal}
+            animationType="fade"
+            onRequestClose={() => setShowSupportModal(false)}
+          >
+            <Pressable style={styles.modalBackdrop} onPress={() => setShowSupportModal(false)}>
+              <View style={styles.modalCard} pointerEvents="box-none">
+                <View style={{ alignItems: 'center', marginBottom: 4 }}>
+                  <Ionicons name="cafe" size={28} color="#FFDD00" />
+                </View>
+                <Text style={styles.modalTitle}>Buy me a coffee?</Text>
+                <Text style={styles.modalBody}>
+                  Hi! I&apos;m a solo artist and musician. If you like what you see,
+                  consider buying me a coffee to support my art via the link below.
+                </Text>
+                <View style={styles.modalButtonsRow}>
+                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleNotNow}>
+                    <Text style={styles.modalBtnSecondaryText}>Not now</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={handleSupportNow}>
+                    <View style={styles.modalBtnContent}>
+                      <Ionicons name="cafe" size={18} color="#FFDD00" />
+                      <Text style={[styles.modalBtnPrimaryText, { marginLeft: 6 }]}>Buy me a coffee</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity onPress={handleDontShow} style={styles.modalDontShowLink}>
+                  <Text style={styles.modalDontShowText}>Don&apos;t show again</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={handleSupportNow}>
-                  <View style={styles.modalBtnContent}>
-                    <Ionicons name="cafe" size={18} color="#FFDD00" />
-                    <Text style={[styles.modalBtnPrimaryText, { marginLeft: 6 }]}>Buy me a coffee</Text>
-                  </View>
-                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={handleDontShow} style={styles.modalDontShowLink}>
-                <Text style={styles.modalDontShowText}>Don’t show again</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Modal>
+            </Pressable>
+          </Modal>
+        )}
         {/* Faded, slow-spinning background icon */}
         <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
           <Animated.Image
@@ -274,16 +279,13 @@ export default function HomeScreen() {
 
             <View style={styles.descriptionContainer}>
               <Text style={styles.description}>
-                 A generative sound sculpture that creates an infinite composition through the interplay of mechanical automation and digital processing. Each moment is unique, born from the tension between predictable patterns and chaotic emergence.
+                A living sound artwork that constantly rewrites itself.
+                Every moment is unique, a balance of rhythm, randomness, and discovery.
               </Text>
             </View>
 
-            <Text style={styles.footer}>
-              Where automation meets artistry in perpetual motion
-            </Text>
-
             <Text style={styles.sliderHint}>
-              Adjust the sliders to view hidden animations.
+              Use the sliders to explore hidden layers.
             </Text>
 
             {/* Flashing images warning (auto-hides after 10s) */}
