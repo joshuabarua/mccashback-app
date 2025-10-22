@@ -30,13 +30,14 @@
       "package": "com.joshuabarua.mccashback",
       "versionCode": 1,
       "blockedPermissions": [
-        "android.permission.ACTIVITY_RECOGNITION"
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
       ]
     },
     "plugins": [
       "expo-router",
       "react-native-vision-camera",
-      "expo-media-library",
       [
         "expo-splash-screen",
         {
