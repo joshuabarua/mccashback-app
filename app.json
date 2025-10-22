@@ -28,7 +28,10 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.joshuabarua.mccashback",
-      "versionCode": 1
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.ACTIVITY_RECOGNITION"
+      ]
     },
     "plugins": [
       "expo-router",
