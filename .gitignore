@@ -49,6 +49,5 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-app-example
-
-automationindminor.json
+keys/
+*.json
