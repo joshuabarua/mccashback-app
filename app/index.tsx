@@ -7,6 +7,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+    KEY_BMAC_DISABLED,
+    KEY_BMAC_LAST_PROMPT,
+    useSupportModal
+} from '@/hooks/useSupportModal';
+
+// fallow-ignore-next-line complexity
 export default function HomeScreen() {
   const router = useRouter();
   const pulse = useRef(new Animated.Value(1)).current;
@@ -16,10 +23,7 @@ export default function HomeScreen() {
 
   // Buy Me a Coffee modal state and constants
   const BMAC_URL = 'https://buymeacoffee.com/mccashback';
-  const KEY_BMAC_DISABLED = 'support.bmac.disabled';
-  const KEY_BMAC_LAST_PROMPT = 'support.bmac.lastPrompt';
-  const KEY_BMAC_LAUNCH_COUNT = 'support.bmac.launchCount';
-  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useSupportModal();
   const [showWarning, setShowWarning] = useState(true);
 
   // Slow-spinning wheels background
@@ -112,45 +116,6 @@ export default function HomeScreen() {
     schedule();
     return () => { mounted = false; if (timeout) clearTimeout(timeout); };
   }, [winkScaleY]);
-
-  // Show support modal on home focus based on stored preferences (Android only)
-  useFocusEffect(
-    useCallback(() => {
-      // Disable Buy Me a Coffee on iOS per Apple App Store guidelines (3.1.1)
-      if (Platform.OS === 'ios') return;
-      
-      let active = true;
-      (async () => {
-        try {
-          const disabled = await AsyncStorage.getItem(KEY_BMAC_DISABLED);
-          if (!active || disabled === '1') return;
-          // First two launches: always show (unless disabled)
-          const rawCount = await AsyncStorage.getItem(KEY_BMAC_LAUNCH_COUNT);
-          let count = parseInt(rawCount ?? '0', 10) || 0;
-          count += 1;
-          await AsyncStorage.setItem(KEY_BMAC_LAUNCH_COUNT, String(count));
-          if (count <= 2) {
-            if (active) setShowSupportModal(true);
-            return;
-          }
-          // After first 2 launches: snooze for 7 days
-          const last = await AsyncStorage.getItem(KEY_BMAC_LAST_PROMPT);
-          if (!last) {
-            if (active) setShowSupportModal(true);
-            return;
-          }
-          const lastMs = parseInt(last, 10) || 0;
-          const oneWeek = 7 * 24 * 60 * 60 * 1000;
-          if (Date.now() - lastMs > oneWeek) {
-            if (active) setShowSupportModal(true);
-          }
-        } catch {}
-      })();
-      return () => {
-        active = false;
-      };
-    }, [])
-  );
 
   // Show flashing images warning for 10 seconds on home focus
   useFocusEffect(

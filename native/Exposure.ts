@@ -1,6 +1,6 @@
 import { NativeModules } from 'react-native';
 
-export type ExposureCapabilities = {
+type ExposureCapabilities = {
   minExposureNs: number;
   maxExposureNs: number;
   minIso: number;
@@ -8,7 +8,7 @@ export type ExposureCapabilities = {
   supportsManual: boolean;
 };
 
-export type CurrentExposure = {
+type CurrentExposure = {
   exposureNs: number;
   iso: number;
 };

@@ -45,6 +45,7 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
+// fallow-ignore-next-line complexity
 const moveDirectories = async (userInput) => {
   try {
     if (userInput === "y") {
